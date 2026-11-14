@@ -1,0 +1,33 @@
+[
+  {"op": "background", "region": "sky", "detail": 5, "vary": 0.6,
+   "color": {"linear": [[0, 0], [0, 332]], "colors": ["#27305f", "#5b4a86", "#c4587a", "#f39b4c"]},
+   "direction": {"angle": 0, "spread": 12}},
+  {"op": "tint", "mask": "sky", "color": "#ffd88a", "amount": 0.75, "blob": [640, 302, 190, 80]},
+
+  {"op": "ellipse", "center": [255, 168], "rx": 175, "ry": 21, "rot": -4, "color": "#57436f", "region": "cloud",
+   "detail": 3, "direction": -4, "soft": 5, "name": "cloud1"},
+  {"op": "ellipse", "center": [770, 118], "rx": 205, "ry": 25, "rot": 3, "color": "#4b3d6c", "region": "cloud",
+   "soft": 6, "name": "cloud2"},
+  {"op": "ellipse", "center": [520, 226], "rx": 125, "ry": 13, "rot": -2, "color": "#8b4e73", "region": "cloud",
+   "soft": 4, "name": "cloud3"},
+  {"op": "form_light", "mask": "cloud", "color": "#ffa06c", "light": [0.25, 1], "width": 9, "amount": 0.85},
+
+  {"op": "ellipse", "center": [640, 300], "rx": 33, "color": "#fff3c0", "region": "sun", "detail": 1.5,
+   "direction": {"around": [640, 300]}},
+
+  {"op": "rect", "x": 0, "y": 332, "w": 1000, "h": 300, "region": "sea", "detail": 3, "vary": 0.7,
+   "color": {"linear": [[0, 332], [0, 625]], "colors": ["#dc8650", "#8a5674", "#2c3a6c", "#182448"]},
+   "direction": {"angle": 0, "spread": 5}},
+  {"op": "tint", "mask": "sea", "color": "#ffcf85", "amount": 0.7, "blob": [640, 430, 46, 120]},
+  {"op": "ellipse", "center": [640, 475], "rx": 62, "ry": 140, "name": "glitter"},
+
+  {"op": "spline", "points": [[-20, 334], [-20, 288], [90, 279], [180, 298], [262, 318], [335, 334]],
+   "color": "#2b2442", "region": "headland", "detail": 2, "direction": 12},
+  {"op": "form_light", "mask": "headland", "color": "#6a3f5c", "light": [1, -0.4], "width": 10, "amount": 0.6},
+
+  {"op": "polygon", "points": [[798, 347], [798, 290], [828, 345]], "color": "#f5e3c6", "region": "boat",
+   "detail": 0.9, "direction": 70},
+  {"op": "polygon", "points": [[794, 346], [794, 300], [776, 344]], "color": "#c9a58f", "region": "boat"},
+  {"op": "polygon", "points": [[768, 349], [834, 349], [825, 360], [777, 360]], "color": "#1d1830", "region": "boat"},
+  {"op": "tint", "mask": "sea", "color": "#141a34", "amount": 0.7, "blob": [800, 372, 30, 9]}
+]

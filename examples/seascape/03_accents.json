@@ -1,0 +1,14 @@
+[
+  {"op": "dabs", "n": 280, "regions": "glitter", "brush": [0.5, 2.2], "stretch": 5, "angle": 0, "seed": 7,
+   "colors": ["#fff6cc", "#ffd98a", "#ffb866"], "style": "dab", "thick": 2.2},
+  {"op": "dabs", "n": 140, "regions": "sea", "brush": [0.4, 1.4], "stretch": 6, "angle": 0, "seed": 8,
+   "colors": ["#f6a877", "#d17a8a", "#7f93c9"], "style": "hair", "opacity": 0.8},
+  {"op": "strokes", "items": [
+     {"path": [[798, 349], [798, 284]], "brush": 0.5, "color": "#1d1830"},
+     {"path": [[772, 364], [800, 367], [830, 364]], "brush": 1.4, "color": "#161b36", "style": "hair", "smooth": true},
+     {"path": [[300, 250], [311, 243], [320, 250], [330, 242], [342, 249]], "brush": 0.6, "color": "#2a2238", "smooth": true},
+     {"path": [[372, 232], [381, 226], [388, 232], [396, 226], [405, 231]], "brush": 0.5, "color": "#2a2238", "smooth": true},
+     {"path": [[628, 292], [646, 296]], "brush": 9, "color": "#fffbe6", "style": "dab", "thick": 2.0, "opacity": 0.85},
+     {"path": [[0, 333], [1000, 333]], "brush": 0.6, "color": "#ffc078", "style": "hair", "opacity": 0.7}
+   ]}
+]

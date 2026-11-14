@@ -1,0 +1,12 @@
+[
+  {"op": "tone_ground", "color": "#8a5a4a"},
+  {"op": "underpaint"},
+  {"op": "block_in"},
+  {"op": "cut_in", "region": "sky", "against": ["headland", "boat", "sun"]},
+  {"op": "cut_in", "region": "sea", "against": ["headland", "boat"]},
+  {"op": "mend"},
+  {"op": "refine", "passes": "broad", "label": "broad correction"},
+  {"op": "refine", "passes": "coarse"},
+  {"op": "refine", "passes": "fine", "label": "fine refinement"},
+  {"op": "mend"}
+]
