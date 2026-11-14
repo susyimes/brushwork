@@ -98,9 +98,11 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--width', type=int, default=2000)
     ap.add_argument('--out', default=os.path.join(ROOT, 'out', 'still_life'))
+    ap.add_argument('--palette', nargs='+', default=['full'],
+                    help='tubes to mix from, e.g. "white ochre cad_red ivory_black" for a Zorn palette')
     a = ap.parse_args()
 
-    st = Studio(width=a.width, height=a.width * 4 // 5, seed=5)
+    st = Studio(width=a.width, height=a.width * 4 // 5, seed=5, palette=a.palette)
     underdrawing(st.sk)
     st.tone_ground('#75604a')
     st.underpaint()

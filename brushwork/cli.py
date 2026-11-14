@@ -3,7 +3,7 @@ instructions than write a script.
 
 A session is a directory that holds the whole state of a painting between calls.
 
-    brush.py new     <session> [--width 1200] [--height 1500] [--seed 1] [--primer "#e2dbcc"]
+    brush.py new     <session> [--width 1200] [--height 1500] [--seed 1] [--primer "#e2dbcc"] [--palette full]
     brush.py do      <session> <ops.json | ->  [--look view.jpg]
     brush.py look    <session> [--out view.jpg] [--crop X Y W H] [--zoom 2] [--what canvas|sketch|both|error] [--unlit]
     brush.py undo    <session>
@@ -117,11 +117,14 @@ def _quiet(*a):
 def cmd_new(a):
     if os.path.exists(os.path.join(a.session, 'meta.json')):
         raise ValueError('a session already exists at %s' % a.session)
+    palette = a.palette[0] if len(a.palette) == 1 else a.palette
+    C.palette_tubes(palette)                        # fail before anything is written
     os.makedirs(os.path.join(a.session, 'views'), exist_ok=True)
-    st = Studio(a.width, a.height, seed=a.seed, primer=a.primer, log=_quiet)
+    st = Studio(a.width, a.height, seed=a.seed, primer=a.primer, log=_quiet, palette=palette)
     st.save(a.session)
     _write_ops_log(a.session, [])
-    return dict(session=os.path.abspath(a.session), width=st.W, height=st.H, units=[1000, round(st.HU, 1)])
+    return dict(session=os.path.abspath(a.session), width=st.W, height=st.H, units=[1000, round(st.HU, 1)],
+                palette=st.palette, tubes=list(st.book.tubes))
 
 
 def cmd_do(a):
@@ -182,6 +185,7 @@ def cmd_info(a):
     undo = sum(os.path.isdir(os.path.join(a.session, 'undo', str(k))) for k in range(1, UNDO_DEPTH + 1))
     return dict(session=os.path.abspath(a.session), width=meta['width'], height=meta['height'],
                 units=[1000, round(1000.0 * meta['height'] / meta['width'], 1)], seed=meta['seed'],
+                palette=meta.get('palette', 'classic'),
                 regions=sorted(sk['regions'], key=lambda n: sk['regions'][n]['id']),
                 masks=[k[5:] for k in z.files if k.startswith('mask:')],
                 batches=len(batches), operations=sum(len(b) for b in batches),
@@ -193,7 +197,7 @@ def cmd_replay(a):
         meta = json.load(f)
     W = a.width
     H = int(round(W * meta['height'] / meta['width']))
-    st = Studio(W, H, seed=meta['seed'], primer=meta['primer'], log=_quiet)
+    st = Studio(W, H, seed=meta['seed'], primer=meta['primer'], log=_quiet, palette=meta.get('palette', 'classic'))
     t0 = time.time()
     for b in _read_ops_log(a.session):
         run_ops(st, b, skip=('look',))
@@ -203,8 +207,11 @@ def cmd_replay(a):
 
 
 def cmd_palette(a):
-    return dict(pigments=[n for n, _, _ in C.PIGMENT_DEFS],
-                note='there is no black pigment: darks are mixed, or use a chromatic black',
+    return dict(pigments={n: '#%02x%02x%02x' % rgb for n, rgb, _ in C.PIGMENT_DEFS},
+                palettes={k: list(v) for k, v in C.PALETTES.items()},
+                note='colours are mixed from the palette chosen at `new` (default full: every colour, no black, so '
+                     'darks are mixed). Choose with_black, or a list such as white ivory_black, for neutral black '
+                     'and limited palettes; any pigment can always be named outright in a stroke.',
                 chromatic_blacks=C.CHROMATIC_BLACKS, styles={k: v for k, v in STYLE.items()},
                 sheen_hues=C.SHEEN_HUES, refine_passes=PASSES)
 
@@ -252,6 +259,8 @@ def main(argv=None):
     p.add_argument('--height', type=int, default=None)
     p.add_argument('--seed', type=int, default=1)
     p.add_argument('--primer', default='#e2dbcc')
+    p.add_argument('--palette', nargs='+', default=['full'], metavar='NAME',
+                   help='full (default), classic, with_black, or a list of pigments for a limited palette')
     p.set_defaults(fn=cmd_new)
     p = sub.add_parser('do', help='apply a JSON list of operations')
     p.add_argument('session')

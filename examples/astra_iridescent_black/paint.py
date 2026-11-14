@@ -40,7 +40,8 @@ MENDABLE = [SC.HAIR_BACK, SC.SKIN, SC.HAIR, SC.LACE, SC.BOW, SC.EYE, SC.PLACKET,
 
 class AstraPainter(Studio):
     def __init__(self, W, seed=3, log=print):
-        super().__init__(W, W * 5 // 4, seed=seed, sketch=SC.build, log=log)
+        super().__init__(W, W * 5 // 4, seed=seed, sketch=SC.build, log=log,
+                         palette='classic')                 # the thirteen tubes this picture was painted with
         self.sc = self.sk
 
     def figure_blockin(self):

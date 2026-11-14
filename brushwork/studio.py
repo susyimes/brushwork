@@ -81,10 +81,12 @@ def _imwrite(path, rgb, quality=92):
 
 class Studio:
     def __init__(self, width=1200, height=None, seed=1, sketch=None, guide_scale=None,
-                 primer='#e2dbcc', log=print):
+                 primer='#e2dbcc', log=print, palette='full'):
         """width, height: canvas size in pixels (height defaults to 5/4 of the width).
         sketch: a Sketch, or a function (GW, GH) -> sketch-like object; default an empty Sketch.
-        The underdrawing lives at guide resolution: full size up to 1200 px wide, half above."""
+        The underdrawing lives at guide resolution: full size up to 1200 px wide, half above.
+        palette: the tubes colours are mixed from: 'full' (every colour, no black), 'classic' (the
+        original thirteen), 'with_black', or a list of tube and palette names for a limited palette."""
         self.W = int(width)
         self.H = int(height) if height else self.W * 5 // 4
         self.S = self.W / 1000.0
@@ -105,7 +107,8 @@ class Studio:
         self.gs = self.GW / self.W
         self.s = self.GW / 1000.0
         self.rng = np.random.default_rng(seed)
-        self.book = C.RecipeBook()
+        self.palette = palette if isinstance(palette, str) else list(palette)
+        self.book = C.RecipeBook(self.palette)
         self.cv = Canvas(self.W, self.H, ground=C.as_lin(primer), pitch=max(3.0, 2.9 * self.S), seed=seed + 1)
         self.tk = self.S ** 0.5
         self._lab = None
@@ -833,7 +836,8 @@ class Studio:
         return _imwrite(path, self.cv.render(lit=lit), quality=95)
 
     def stats(self):
-        return dict(width=self.W, height=self.H, seed=self.seed, brushstrokes=int(self.cv.n_strokes),
+        return dict(width=self.W, height=self.H, seed=self.seed, palette=self.palette,
+                    brushstrokes=int(self.cv.n_strokes),
                     bristle_trails=int(self.cv.n_trails), pixels_touched=int(self.cv.n_pix),
                     stages=[dict(name=n, strokes_after=int(k)) for n, k in self.stages])
 
@@ -846,7 +850,7 @@ class Studio:
                  iri=cv.iri, ifd=cv.ifd, tooth=cv.tooth, thk0=self.thk0)
         self.sk.save(os.path.join(d, 'sketch.npz'))
         meta = dict(format=1, width=self.W, height=self.H, seed=self.seed, guide_scale=self.guide_scale,
-                    primer=self.primer, n_strokes=int(cv.n_strokes), n_trails=int(cv.n_trails),
+                    primer=self.primer, palette=self.palette, n_strokes=int(cv.n_strokes), n_trails=int(cv.n_trails),
                     n_pix=int(cv.n_pix), stages=self.stages, looks=self._looks,
                     rng=self.rng.bit_generator.state, canvas_rng=cv.rng.bit_generator.state)
         with open(os.path.join(d, 'meta.json'), 'w', encoding='utf-8') as f:
@@ -859,7 +863,8 @@ class Studio:
             meta = json.load(f)
         sk = Sketch.load(os.path.join(d, 'sketch.npz'))
         st = cls(meta['width'], meta['height'], seed=meta['seed'], sketch=sk, guide_scale=meta['guide_scale'],
-                 primer=meta['primer'], log=log)
+                 primer=meta['primer'], log=log,
+                 palette=meta.get('palette', 'classic'))      # paintings saved before palettes used the first thirteen
         z = np.load(os.path.join(d, 'canvas.npz'))
         cv = st.cv
         for k in ('col', 'sca', 'wet', 'hgt', 'thk', 'iri', 'ifd', 'tooth'):

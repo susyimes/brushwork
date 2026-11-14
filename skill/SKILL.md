@@ -40,7 +40,7 @@ from brushwork import Studio
 ## 基本概念
 
 - **单位**：画布永远宽 1000 单位，x 向右、y 向下，高度按比例（1200×1500 的画布高 1250 单位）。位置、笔的粗细、笔画长度都用单位，所以同一份指令既能画 1000 像素的小稿，也能画 3200 像素的成品。
-- **颜色**：`'#rrggbb'` 或 `[r, g, b]`（0–255）。工具会把它换成真实颜料的配方。调色盘里没有黑色，深色是混出来的。
+- **颜色**：`'#rrggbb'` 或 `[r, g, b]`（0–255）。工具会把它换成真实颜料的配方，给出这些颜料调得出的最接近的颜色。默认调色盘是 25 管彩色加白，不含黑，深色是混出来的；见下面「调色盘」。
 - **底稿（Sketch，`st.sk`）**：动笔前的意图。用形状从后往前搭：每个形状可以规定它覆盖处的颜色、所属区域（region）、运笔方向（direction）、最小用笔（detail）。再用几个造型调用把平涂变成有体积的东西。
 - **作画（Studio，`st`）**：罩底 → 整体打底 → 逐区域铺色 → 切边 → 对照底稿修正 → 手工落笔。
 - **看（look）**：把画面存成图片，自己打开看，再决定下一步。这一步不能省。
@@ -144,12 +144,30 @@ dict(path=[[x, y], ...],      # 两个点是一个点触或一段直线
 
 区域属性：`style` 画法；`vary` 色彩活泼程度，0 平整、0.4 默认、1 是印象派式的碎色；`brush` 最大笔半径；`length` 笔画长度范围；`black=True` 把这个区域当成「五彩斑斓的黑」，用互补色调出的黑加珠光来画。
 
-`python brush.py palette` 列出全部颜料、style 的参数、chromatic black 的名字和珠光色名。
+## 调色盘
+
+建画布时选定从哪些颜料管里调色：`Studio(palette=...)`，命令行是 `brush.py new ... --palette ...`。
+
+| 调色盘 | 内容 | 什么时候用 |
+| --- | --- | --- |
+| `'full'`（默认） | 白加 25 管彩色，不含黑 | 一般的彩色画 |
+| `'with_black'` | 再加一管象牙黑 | 墨线、水墨、黑白稿、平面风格，需要不带色相的黑和灰 |
+| `'classic'` | 最初的 13 管 | 重画旧作；色域较窄，艳蓝艳紫调不出 |
+| 颜料名的列表 | 只用这几管 | 限定调色盘，整幅画自动落在这几管调得出的颜色里 |
+
+限定调色盘的例子：`['white', 'ivory_black']` 是单色素描，`['white', 'ochre', 'cad_red', 'ivory_black']` 是佐恩调色盘。列表里也可以写调色盘名，比如 `['classic', 'ivory_black']`。
+
+颜料管：`white`；黄橙 `lemon_yellow` `cad_yellow` `naples_yellow` `ochre` `cad_orange`；红 `cad_red` `pyrrole_red` `alizarin` `rose` `magenta`；紫 `cobalt_violet` `purple` `violet`；蓝 `ultramarine` `cobalt_blue` `cerulean` `phthalo_blue`；青绿 `turquoise` `teal` `phthalo_green` `permanent_green` `sap_green`；土色 `sienna` `umber` `raw_umber`；黑 `ivory_black`。
+
+- **要不要黑**：彩色画不需要。`full` 能调出 `#1a1a1d` 这样的中性深色，比它更深的近黑会带一点色相，而这正是油画暗部好看的原因。只有要纯正的中性黑和灰时才选 `with_black`。
+- **点名永远有效**：不管选了哪个调色盘，`strokes` 里写 `pigments={'ivory_black': 1}` 都能直接用那一管。
+- **颜料有边界**：屏幕上的纯蓝 `#0000ff`、纯品红 `#ff00ff`、纯绿 `#00ff00` 不是颜料调得出的颜色，会得到最接近的 `#2a3bc9`、`#e150c4`、`#78e73a`。纯黑 `#000000` 同理，最深是 `#0e0e0f`。
+- **看颜料**：`python brush.py palette` 列出全部颜料管的色值、调色盘、style 的参数、chromatic black 的名字和珠光色名；`python examples/palette_chart.py` 画一张色卡到 `out/palette_chart.jpg`。
 
 ## 命令行会话
 
 ```
-python brush.py new   <会话目录> --width 1000 --height 625 --seed 2
+python brush.py new   <会话目录> --width 1000 --height 625 --seed 2 [--palette with_black]
 python brush.py do    <会话目录> ops.json [--look view.jpg]     # ops.json 是 [{"op": ...}, ...]，- 表示从标准输入读
 python brush.py look  <会话目录> --out v.jpg [--crop X Y W H --zoom 2] [--what both]
 python brush.py undo  <会话目录>                                 # 撤销上一次 do，最多三步
@@ -175,4 +193,4 @@ python brush.py crop  <图片> X Y W H [--zoom 2]                  # 从任何�
 
 ## 自检
 
-`python tests/check.py`，约一分钟，四项都应为 PASS。
+`python tests/check.py`，约一分钟，五项都应为 PASS。

@@ -5,7 +5,9 @@
 1. Every sketch and painting operation runs (tests/all_ops.json uses each one at least once).
 2. A painting saved and reloaded between steps comes out identical to one painted in a single run.
 3. The session command line works end to end: new, do, look, undo, replay.
-4. The Astra example still paints exactly the picture it painted before the toolkit was made
+4. Palettes: the original thirteen tubes still give the same recipe table, a limited palette
+   stays within its tubes, and a saved painting remembers its palette.
+5. The Astra example still paints exactly the picture it painted before the toolkit was made
    general (pixel hash at 800 px wide; the reference hash is from the machine it was made on).
 """
 import hashlib
@@ -92,6 +94,31 @@ def check_all_ops(tmp):
         len(res), st.cv.n_strokes, (', never exercised: %s' % sorted(missing)) if missing else '')
 
 
+def check_palettes(tmp):
+    """The first thirteen tubes still give the recipe table the Astra picture was painted from, a
+    limited palette cannot produce anything outside its tubes, and a painting remembers its palette."""
+    from brushwork import color as C
+    classic = C.RecipeBook('classic')
+    same = classic.tubes == tuple(n for n, _, _ in C.PIGMENT_DEFS[:13]) and len(classic.rgb) == 9955
+    mono = ['white', 'ivory_black']
+    st = Studio(300, 240, seed=3, primer='#808080', log=quiet, palette=mono)
+    st.sk.background('#3a5fa0', region='sky', direction=10, detail=4)
+    st.sk.ellipse((500, 420), 180, color='#e6c022', region='sun', detail=2)
+    st.paint(ground='#777777')
+    rgb = st.cv.render(lit=False, dither=False).astype(int)
+    tint = int((rgb.max(2) - rgb.min(2)).max())                 # white and black alone cannot make a colour
+    d = os.path.join(tmp, 'mono')
+    st.save(d)
+    kept = Studio.load(d, log=quiet).palette == mono
+    try:
+        Studio(100, 100, log=quiet, palette='no_such_palette')
+        refused = False
+    except ValueError:
+        refused = True
+    return same and tint <= 10 and kept and refused, '%d tubes, classic table %d recipes, grisaille tint %d/255' % (
+        len(C.PIGMENT_DEFS), len(classic.rgb), tint)
+
+
 def check_astra():
     from paint import AstraPainter
     p = AstraPainter(800, log=quiet)
@@ -107,6 +134,7 @@ def main():
         for name, fn in (('every operation runs', lambda: check_all_ops(tmp)),
                          ('save/load is exact', lambda: check_persistence(tmp)),
                          ('session command line', lambda: check_cli(tmp)),
+                         ('palettes', lambda: check_palettes(tmp)),
                          ('Astra example unchanged', check_astra)):
             good, note = fn()
             ok &= good

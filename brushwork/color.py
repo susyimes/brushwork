@@ -60,24 +60,69 @@ def mix_lab(c0, c1, t):
 
 # ----------------------------------------------------------------------------- pigments
 # name, masstone (8-bit sRGB, thick paint straight from the tube), scattering S
-# Low S = transparent, strong-tinting pigment.  No black.
+# Low S = transparent, strong-tinting pigment.
+#
+# The first thirteen tubes are the original palette.  Pictures painted from it (the Astra
+# example) are pinned pixel for pixel, so never reorder or retune them: new tubes go at the end.
 PIGMENT_DEFS = [
-    ('white',         (250, 249, 244), 1.00),
-    ('cad_yellow',    (250, 205,  20), 0.75),
-    ('ochre',         (190, 140,  60), 0.60),
-    ('cad_red',       (225,  50,  30), 0.65),
-    ('alizarin',      (110,  12,  35), 0.10),
-    ('magenta',       (150,  15,  95), 0.10),
-    ('violet',        ( 38,  12,  62), 0.07),
-    ('ultramarine',   ( 25,  30, 130), 0.14),
-    ('phthalo_blue',  (  8,  28,  85), 0.07),
-    ('teal',          ( 10, 120, 130), 0.30),
-    ('phthalo_green', (  4,  56,  42), 0.08),
-    ('umber',         ( 55,  35,  25), 0.25),
-    ('sienna',        (130,  60,  30), 0.30),
+    ('white',           (250, 249, 244), 1.00),
+    ('cad_yellow',      (250, 205,  20), 0.75),
+    ('ochre',           (190, 140,  60), 0.60),
+    ('cad_red',         (225,  50,  30), 0.65),
+    ('alizarin',        (110,  12,  35), 0.10),
+    ('magenta',         (150,  15,  95), 0.10),
+    ('violet',          ( 38,  12,  62), 0.07),
+    ('ultramarine',     ( 25,  30, 130), 0.14),
+    ('phthalo_blue',    (  8,  28,  85), 0.07),
+    ('teal',            ( 10, 120, 130), 0.30),
+    ('phthalo_green',   (  4,  56,  42), 0.08),
+    ('umber',           ( 55,  35,  25), 0.25),
+    ('sienna',          (130,  60,  30), 0.30),
+    # --- added for a wider gamut: cleaner yellows and reds, and above all the blues, violets
+    # and pinks the first thirteen could not reach
+    ('lemon_yellow',    (250, 232,  45), 0.70),
+    ('naples_yellow',   (246, 214, 140), 0.85),
+    ('cad_orange',      (240, 120,  36), 0.70),
+    ('pyrrole_red',     (226,  24,  28), 0.45),
+    ('rose',            (216,  24, 104), 0.10),
+    ('cobalt_violet',   (150,  44, 182), 0.40),
+    ('purple',          ( 78,  24, 168), 0.12),
+    ('cobalt_blue',     ( 16,  46, 174), 0.45),
+    ('cerulean',        ( 30, 122, 170), 0.65),
+    ('turquoise',       ( 16, 160, 160), 0.55),
+    ('permanent_green', ( 40, 168,  70), 0.50),
+    ('sap_green',       ( 80, 124,  42), 0.20),
+    ('raw_umber',       ( 72,  60,  40), 0.35),
+    # --- black is a tube you ask for, never one the painter reaches for by itself: see PALETTES
+    ('ivory_black',     ( 14,  14,  15), 0.12),
 ]
 PIG = {name: i for i, (name, _, _) in enumerate(PIGMENT_DEFS)}
 NPIG = len(PIGMENT_DEFS)
+
+# Which tubes the painter mixes from when it is handed a colour.  Any tube can still be named
+# outright in a stroke (pigments={'ivory_black': 1}) whatever the palette.
+PALETTES = dict(
+    classic=tuple(n for n, _, _ in PIGMENT_DEFS[:13]),                   # the original thirteen
+    full=tuple(n for n, _, _ in PIGMENT_DEFS if n != 'ivory_black'),     # every colour, no black: the default
+    with_black=tuple(n for n, _, _ in PIGMENT_DEFS),                     # for ink, grisaille, flat graphic work
+)
+
+
+def palette_tubes(palette='full'):
+    """A palette name, a tube name or a list mixing both -> the tubes, in tube order, white included.
+
+    palette_tubes('classic'), palette_tubes(['white', 'ivory_black']), palette_tubes(['classic', 'ivory_black'])
+    """
+    keep = {'white'}
+    for item in ([palette] if isinstance(palette, str) else palette):
+        if item in PALETTES:
+            keep.update(PALETTES[item])
+        elif item in PIG:
+            keep.add(item)
+        else:
+            raise ValueError('unknown palette or pigment %r: palettes are %s, pigments are %s'
+                             % (item, ', '.join(PALETTES), ', '.join(PIG)))
+    return tuple(n for n, _, _ in PIGMENT_DEFS if n in keep)
 
 
 def _ks_of_reflectance(R):
@@ -110,10 +155,14 @@ class RecipeBook:
     Table = single pigments and strength-balanced pairs, each let down with white over a
     log ladder.  Lookup is nearest-neighbour in OKLab, choosing at random among near ties so
     the same colour is not always mixed from the same tubes.
+
+    palette: which tubes are on the table (see palette_tubes).  A short list is a limited
+    palette: every colour asked for comes back as the nearest thing those tubes can make.
     """
 
-    def __init__(self):
-        chroma = [i for i in range(NPIG) if i != PIG['white']]
+    def __init__(self, palette='full'):
+        self.tubes = palette_tubes(palette)
+        chroma = [PIG[n] for n in self.tubes if n != 'white']
         strength = PIG_K.mean(1) + PIG_S
         bases = []  # (ia, ib, wa, wb)
         for a in chroma:
@@ -145,6 +194,7 @@ class RecipeBook:
     def lookup(self, rgb_lin, rng=None, k=4, tol=0.012):
         """rgb_lin (N,3) linear -> (idx (N,4) int32, w (N,4) float32, achieved rgb (N,3))."""
         lab = lin_to_oklab(np.atleast_2d(rgb_lin))
+        k = min(k, len(self.rgb))
         d, ii = self.tree.query(lab, k=k)
         if rng is None or k == 1:
             pick = ii[:, 0] if k > 1 else ii
