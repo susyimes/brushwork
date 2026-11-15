@@ -47,5 +47,10 @@
    ]},
   {"op": "dabs", "n": 40, "regions": "night", "colors": ["#ffffff", "#ffe0a0"], "brush": [0.4, 1.5], "seed": 3},
   {"op": "dabs", "n": 20, "regions": "body", "colors": ["#8a5a3a"], "angle": 45, "stretch": 4, "style": "hair"},
+  {"op": "refine", "regions": ["vase"], "passes": "detail", "label": "detail pass"},
+  {"op": "strokes", "items": [
+     {"path": [[300, 300], [360, 296]], "brush": "liner", "color": "#202020"},
+     {"path": [[300, 310], [360, 306]], "brush": "hairline", "color": "#202020"}]},
+  {"op": "dabs", "n": 10, "regions": "night", "colors": ["#ffffff"], "brush": ["hairline", "fine"], "seed": 4},
   {"op": "dry"}
 ]

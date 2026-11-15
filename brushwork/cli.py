@@ -9,7 +9,7 @@ A session is a directory that holds the whole state of a painting between calls.
     brush.py look    <session> [--out view.jpg] [--crop X Y W H] [--zoom 2] [--what canvas|sketch|both|error] [--unlit]
     brush.py undo    <session>
     brush.py info    <session>
-    brush.py replay  <session> --width 3200 --out final.png
+    brush.py replay  <session> --width 3200 --out final.png [--html process.html]
     brush.py media   [name]          # the painting media: oil, gouache, watercolor, pastel ...
     brush.py palette
     brush.py crop    <image> X Y W H [--zoom 2] [--out crop.png]
@@ -34,7 +34,7 @@ import numpy as np
 
 from . import color as C
 from . import media as MEDIA
-from .studio import PASSES, STYLE, Studio, _imwrite
+from .studio import PASSES, SIZES, STYLE, Studio, _imwrite
 
 SKETCH_OPS = ('background', 'polygon', 'spline', 'ellipse', 'rect', 'ribbon', 'tint', 'form_shadow', 'form_light',
               'cast_shadow', 'line', 'direction', 'detail', 'sheen_field', 'region_props')
@@ -204,11 +204,18 @@ def cmd_replay(a):
     st = Studio(W, H, seed=meta['seed'], primer=meta['primer'], log=_quiet, palette=meta.get('palette', 'classic'),
                 medium=meta.get('medium', 'oil'))
     t0 = time.time()
-    for b in _read_ops_log(a.session):
+    if a.html:
+        st.record(frame_width=a.frame_width)
+    for k, b in enumerate(_read_ops_log(a.session)):
         run_ops(st, b, skip=('look',))
+        st.keyframe('do %d: %s' % (k + 1, ', '.join(op.get('op', '?') for op in b)))
     p = st.save_image(a.out)
-    return dict(path=os.path.abspath(p), width=W, height=H, brushstrokes=int(st.cv.n_strokes),
-                bristle_trails=int(st.cv.n_trails), seconds=round(time.time() - t0, 1))
+    out = dict(path=os.path.abspath(p), width=W, height=H, brushstrokes=int(st.cv.n_strokes),
+               bristle_trails=int(st.cv.n_trails), seconds=round(time.time() - t0, 1))
+    if a.html:
+        r = st.save_replay(a.html, title=a.title or os.path.basename(os.path.abspath(a.session)))
+        out['replay'] = dict(path=r['path'], steps=r['frames'] - 1, megabytes=round(r['bytes'] / 1e6, 1))
+    return out
 
 
 def cmd_media(a):
@@ -228,6 +235,7 @@ def cmd_palette(a):
                 note='colours are mixed from the palette chosen at `new` (default full: every colour, no black, so '
                      'darks are mixed). Choose with_black, or a list such as white ivory_black, for neutral black '
                      'and limited palettes; any pigment can always be named outright in a stroke.',
+                brush_sizes=dict(SIZES, note='radius in canvas units; any brush argument takes these names'),
                 chromatic_blacks=C.CHROMATIC_BLACKS, styles={k: v for k, v in STYLE.items()},
                 sheen_hues=C.SHEEN_HUES, refine_passes=PASSES)
 
@@ -304,6 +312,9 @@ def main(argv=None):
     p.add_argument('session')
     p.add_argument('--width', type=int, required=True)
     p.add_argument('--out', required=True)
+    p.add_argument('--html', default=None, help='also write a web page that plays the painting back')
+    p.add_argument('--frame-width', type=int, default=1200, help='width of the replay page\'s pictures')
+    p.add_argument('--title', default=None, help='title shown on the replay page')
     p.set_defaults(fn=cmd_replay)
     p = sub.add_parser('media', help='list the painting media, or show one in full')
     p.add_argument('name', nargs='?', default=None)

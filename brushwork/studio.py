@@ -58,7 +58,24 @@ FAMILIES = ['violet', 'indigo', 'blue', 'teal', 'green', 'warm', 'red', 'wine']
 COARSE = ((2.6, 0.050, (10, 44)), (1.6, 0.042, (7, 30)), (1.0, 0.036, (4, 18)))
 FINE = ((1.6, 0.040, (6, 26)), (1.0, 0.032, (4, 16)), (0.75, 0.030, (3, 12)))
 BROAD = ((6.0, 0.055, (24, 90)), (4.0, 0.050, (16, 64)))      # for regions too coarse for COARSE
-PASSES = dict(broad=BROAD, coarse=COARSE, fine=FINE)
+DETAIL = ((0.62, 0.026, (2.5, 9)), (0.45, 0.022, (2, 7)), (0.33, 0.020, (1.5, 5.5)))   # eyes, lips, small features
+PASSES = dict(broad=BROAD, coarse=COARSE, fine=FINE, detail=DETAIL)
+
+# Brush sizes by name: the radius in canvas units (the canvas is 1000 units wide, so a unit is a
+# pixel at 1000 px and 3.2 pixels at 3200).  Anywhere a brush radius is asked for, a name will do.
+# A brush much under a pixel cannot draw anything finer than a pixel: hairline and liner detail
+# needs a wide canvas (2400 px and up), the way a miniature needs a magnifier.
+SIZES = dict(hairline=0.25, liner=0.4, fine=0.7, small=1.2, medium=2.5, large=5.0, broad=10.0, wide=18.0)
+
+
+def size(v):
+    """A brush radius in units, from a number or one of the names in SIZES."""
+    if isinstance(v, str):
+        if v not in SIZES:
+            raise ValueError('unknown brush size %r: the sizes are %s' % (v, ', '.join(
+                '%s (%g)' % kv for kv in SIZES.items())))
+        return SIZES[v]
+    return float(v)
 
 
 def _black_families():
@@ -131,6 +148,7 @@ class Studio:
         self.lut = C.thinfilm_lut()
         self.stages = []
         self.frame_cb = None
+        self.recorder = None
         self.thk0 = np.zeros((self.H, self.W), np.float32)
         self.view_dir = None
         self._looks = 0
@@ -247,6 +265,8 @@ class Studio:
         self.cv.update_tooth()
         self.stages.append((name, self.cv.n_strokes))
         self.say('%-28s strokes so far %8d' % (name, self.cv.n_strokes))
+        if self.recorder is not None:
+            self.recorder.keyframe(name, self.render())
         if self.frame_cb:
             self.frame_cb(name)
 
@@ -484,7 +504,7 @@ class Studio:
         p = sk.props(rid) if hasattr(sk, 'props') else {}
         r0 = float(np.median(sk.rmin[m]))
         area = float(m.sum()) / self.s ** 2
-        big = p.get('brush') or min(max(3.2 * r0, 1.2), 16.0, 0.12 * math.sqrt(area) + 0.6)
+        big = size(p['brush']) if p.get('brush') else min(max(3.2 * r0, 1.2), 16.0, 0.12 * math.sqrt(area) + 0.6)
         ln = p.get('length') or (3.5 * big, 12.0 * big)
         style = p.get('style') or ('smooth' if r0 <= 1.3 else 'body')
         vary = float(p.get('vary', 0.4))
@@ -498,6 +518,7 @@ class Studio:
         Give `color` ('#rrggbb') or `pigments` ({'umber': .4, 'violet': .6}).  A mid-value
         ground that is roughly the average of the picture is the usual choice: whatever the
         later strokes leave uncovered will show this colour, not white."""
+        brush = size(brush)
         rng = self.rng
         mask = np.ones((self.GH, self.GW), bool)
         n1 = value_noise(self.GW, self.GH, 260 * self.s, rng, octaves=2)
@@ -523,6 +544,7 @@ class Studio:
         block-in that follows sharpens the edges.  A stroke stops where the intended colour
         changes by more than `edge` (OKLab), so it crosses thin lines and soft transitions but
         does not drag one object's colour far into its neighbour."""
+        brush = size(brush)
         fig = self.rmask(regions)
         merged = fig.astype(np.uint8)
         n = self.fill('figure', fig, brush, length, cover=cover, style='body', edge_tol=edge, blur=0.45,
@@ -636,6 +658,7 @@ class Studio:
         shows between strokes, and touch each one in with a small dab of the right colour."""
         if not self.medium.mend_holes:                  # pastel, charcoal: the paper showing through is the look
             return 0
+        brush = size(brush)
         sk = self.sk
         regs = self.rids(regions)
         reg_full = cv2.resize(sk.region, (self.W, self.H), interpolation=cv2.INTER_NEAREST)
@@ -703,6 +726,7 @@ class Studio:
         """Drag a clean brush over a region to lose hard edges inside it.  A clean brush only
         moves wet paint, so the region is first brought back to `rewet` wetness (as if oiled
         out); pass rewet=0 to work only on what is still wet."""
+        brush = size(brush)
         m = self.rmask(regions)
         if rewet > 0:
             full = cv2.resize(m.astype(np.uint8), (self.W, self.H), interpolation=cv2.INTER_NEAREST) > 0
@@ -732,7 +756,7 @@ class Studio:
             if it.get('smooth') and len(pl) >= 3:
                 pl = catmull(pl, n=10)
             d['pl'] = pl
-            d['r'] = float(it.get('brush', 1.0))
+            d['r'] = size(it.get('brush', 1.0))
             d['style'] = it.get('style', 'line')
             if 'load' in it:
                 d['load'] = it['load']
@@ -758,7 +782,11 @@ class Studio:
         """Scatter n short touches over the given regions (or a named mask): stars, petals,
         glints on water, texture.  brush is a (min, max) radius, small ones far more common;
         stretch is the length of each touch in brush radii; angle (degrees) lays them all one
-        way, give or take a little, instead of every which way."""
+        way, give or take a little, instead of every which way.  Sizes may be names ('fine')."""
+        if isinstance(brush, (str, int, float)):
+            lo = hi = size(brush)
+        else:
+            lo, hi = size(brush[0]), size(brush[1])
         rng = np.random.default_rng(seed) if seed is not None else self.rng
         ys, xs = np.nonzero(self.rmask(regions))
         if len(ys) == 0:
@@ -767,7 +795,7 @@ class Studio:
         items = []
         for k in pick:
             p = np.array([(xs[k] + rng.random()) / self.s, (ys[k] + rng.random()) / self.s])
-            r = brush[0] + (brush[1] - brush[0]) * rng.random() ** 3
+            r = lo + (hi - lo) * rng.random() ** 3
             a = rng.uniform(0, math.pi) if angle is None else math.radians(angle + rng.uniform(-8, 8))
             d = np.array([math.cos(a), math.sin(a)]) * r * stretch * 0.5
             items.append(dict(path=[p - d, p + d], brush=r, color=colors[rng.integers(len(colors))], style=style,
@@ -777,6 +805,7 @@ class Studio:
     def glaze(self, regions, color, opacity=0.25, brush=6.0, length=None, cover=1.3, dry=True):
         """A transparent film of colour over what is already there (it multiplies, so it can
         only darken and tint): deepen a shadow, warm a passage, unify an area."""
+        brush = size(brush)
         m = self.rmask(regions)
         li, lw, _ = self.book.lookup(C.as_lin(color)[None], None)
         n = self.fill('glaze', m, brush, length or (5 * brush, 16 * brush), cover=cover, style='glaze', edge_tol=9.0,
@@ -867,6 +896,34 @@ class Studio:
     def save_image(self, path, lit=True):
         """Write the finished painting at full resolution (PNG or JPG by extension)."""
         return _imwrite(path, self.render(lit=lit), quality=95)
+
+    # ------------------------------------------------------------------ watching it being painted
+    def record(self, frame_width=1200, quality=85):
+        """From now on keep every stroke, and the canvas at the end of every stage, so that
+        save_replay() can write a web page that plays the painting back.  Recording only
+        watches: the painting comes out exactly the same with or without it."""
+        from .replay import Recorder
+        self.recorder = Recorder(self.W, self.H, self.S, frame_width=frame_width, quality=quality)
+        self.cv.recorder = self.recorder
+        self.recorder.keyframe('bare canvas' if self.cv.n_strokes == 0 else 'start', self.render(), force=True)
+        return self.recorder
+
+    def keyframe(self, name):
+        """Close a step of the replay here (stage() does this by itself)."""
+        if self.recorder is not None:
+            self.recorder.keyframe(name, self.render())
+
+    def save_replay(self, path, title=''):
+        """Write the recorded painting as one self-contained HTML page: play, pause, scrub,
+        jump between steps, hold 底稿 to see the underdrawing."""
+        if self.recorder is None:
+            raise ValueError('call record() before painting to keep a replay')
+        self.recorder.keyframe('finished', self.render())
+        sketch = (C.lin_to_srgb(np.clip(self.sk.target, 0, 1)) * 255 + 0.5).astype(np.uint8)
+        sketch = cv2.resize(sketch, (self.W, self.H), interpolation=cv2.INTER_LINEAR)
+        return self.recorder.export(path, title=title, sketch=sketch,
+                                    info=dict(medium=self.medium.title, width=self.W, height=self.H,
+                                              strokes=int(self.cv.n_strokes)))
 
     def stats(self):
         return dict(width=self.W, height=self.H, seed=self.seed, medium=self.medium.name, palette=self.palette,

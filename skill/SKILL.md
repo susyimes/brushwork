@@ -119,7 +119,7 @@ st.save_image('lemon.png')
 | `block_in(regions)` | 逐区域用大小两号笔铺色，按给的顺序（默认按底稿登记顺序，即从后往前） |
 | `cut_in(region, against)` | 用 region 自己的颜色沿它和 against 的交界重画一遍，把别人的轮廓收干净 |
 | `mend(regions)` | 找出笔触之间漏出底色的针孔并补上 |
-| `refine(regions, passes)` | 对照底稿，偏差大的地方用更小的笔重画。`passes` 为 `'broad'`、`'coarse'`、`'fine'` |
+| `refine(regions, passes)` | 对照底稿，偏差大的地方用更小的笔重画。`passes` 为 `'broad'`、`'coarse'`、`'fine'`、`'detail'`（眼、唇这类小五官，最小到 0.33 单位） |
 | `strokes(items, on)` | 手工落笔，见下 |
 | `dabs(n, regions, brush, colors, stretch, angle, style, seed)` | 在区域或具名 mask 内随机点 n 笔：星星、水面反光、花瓣、肌理 |
 | `glaze(regions, color, opacity)` | 透明罩染，只会变暗变色：加深阴影、统一色调 |
@@ -133,7 +133,7 @@ st.save_image('lemon.png')
 
 ```python
 dict(path=[[x, y], ...],      # 两个点是一个点触或一段直线
-     brush=1.2,               # 笔半径，单位
+     brush=1.2,               # 笔半径，单位；也可以写名字，如 'liner'（见下面「画笔粗细」）
      color='#fff8e0',         # 或 pigments={'alizarin': .5, 'white': .5}，或 black='violet'
      style='line',            # line 勾线 | dab 厚点 | hair 细长 | body | impasto 厚涂 | smooth 薄 | glaze | wash
      smooth=True,             # 把折线变成过各点的曲线
@@ -144,6 +144,25 @@ dict(path=[[x, y], ...],      # 两个点是一个点触或一段直线
 `on=['区域', ...]` 把这批笔限制在这些区域内，出界处自动截断。
 
 区域属性：`style` 画法；`vary` 色彩活泼程度，0 平整、0.4 默认、1 是印象派式的碎色；`brush` 最大笔半径；`length` 笔画长度范围；`black=True` 把这个区域当成「五彩斑斓的黑」，用互补色调出的黑加珠光来画。
+
+## 画笔粗细
+
+凡是要笔半径的地方（`strokes` 的 `brush`、`dabs`、`glaze`、`soften`、`underpaint`、`mend`、区域属性 `brush`），都可以写数字（单位），也可以写名字：
+
+| 名字 | 半径（单位） | 1000 像素宽时 | 3200 像素宽时 | 用来画 |
+| --- | --- | --- | --- | --- |
+| `hairline` | 0.25 | 0.25 px | 0.8 px | 睫毛尖、发丝、最细的线 |
+| `liner` | 0.4 | 0.4 px | 1.3 px | 勾线、眼睑、细发丝 |
+| `fine` | 0.7 | 0.7 px | 2.2 px | 五官、小高光、细节 |
+| `small` | 1.2 | 1.2 px | 3.8 px | 小物件、脸的明暗 |
+| `medium` | 2.5 | 2.5 px | 8 px | 衣褶、手臂 |
+| `large` | 5 | 5 px | 16 px | 大块颜色 |
+| `broad` | 10 | 10 px | 32 px | 天空、墙面、底色 |
+| `wide` | 18 | 18 px | 58 px | 大面积打底 |
+
+- **细节要靠大画布**：笔小于一个像素就画不出比一个像素更细的东西。`hairline`、`liner` 的细节要在 2400 像素宽以上的画布上才出得来；小稿上看不出，不代表大图上画不出。
+- **底稿也要给得够细**：`refine` 只在底稿 `detail` 不大于笔半径的地方用那支笔。眼睛、嘴唇想用 `'detail'` 这一档，就把那里的 `detail` 设到 0.33–0.6。
+- **照着线稿画时**：细线用 `liner`/`hairline` 按线稿的粗细勾；睫毛这种粗而有形的黑色，用小笔把它的形状填满，比一笔粗线更像原稿。
 
 ## 调色盘
 
@@ -200,6 +219,24 @@ dict(path=[[x, y], ...],      # 两个点是一个点触或一段直线
 
 笔触参数都可以写进 `all`、`styles`、`scale`：`opacity` `thick` `dry`（多早在纸纹上碎开） `pickup`（带起湿颜料） `unmix`（笔上颜色不匀） `furrow` `ridge` `blob`（起伏） `taper` `skip` `wobble` `ragged`（手的稳定程度） `mult`（0 不透明，1 只会把下面变深的透明罩染）。完整说明在 `brushwork/media.py` 开头。
 
+## 回放作画过程
+
+想让人看到这幅画是怎么一笔笔画出来的，就在动笔前打开记录，画完存一个网页：
+
+```python
+st = Studio(1200, 1500)
+st.record()                                   # 从这里起记下每一笔和每个步骤结束时的画面
+...                                           # 照常画
+st.save_replay('process.html', title='标题')   # 一个独立的 HTML 文件，双击就能看
+```
+
+命令行会话存着全部指令，任何会话都能事后导出：`brush.py replay <会话目录> --width 1200 --out final.png --html process.html`，每次 `do` 是回放里的一步。
+
+- **网页里能做什么**：播放、暂停、调速，拖进度条，点步骤名直接跳到那一步画完的样子，按住「底稿」看底稿。打开时先显示成品，按播放从空白画布开始画。
+- **看到的是真画**：每一步里的笔按真实的落笔顺序、沿各自的路径把这一步画完的样子揭开，像素都是引擎画出来的，网页不重新模拟颜料。同一步里被后面的笔盖住的地方，会直接显示成被盖住之后的样子；步骤分得越细，回放越贴近真实过程。
+- **记录不改变画**：打开记录画出来的画和不打开时逐像素相同，只是每个步骤结束时多渲染一张图（3200 宽时每张约 1 秒）。
+- **大小**：步骤图默认 1200 宽（`record(frame_width=...)`）。2 万笔左右的画，网页约 1 MB；6 万笔、二十多步的大画约 5–10 MB。
+
 ## 命令行会话
 
 ```
@@ -208,7 +245,7 @@ python brush.py do    <会话目录> ops.json [--look view.jpg]     # ops.json �
 python brush.py look  <会话目录> --out v.jpg [--crop X Y W H --zoom 2] [--what both]
 python brush.py undo  <会话目录>                                 # 撤销上一次 do，最多三步
 python brush.py info  <会话目录>
-python brush.py replay <会话目录> --width 3200 --out final.png   # 用同样的指令按别的尺寸重画
+python brush.py replay <会话目录> --width 3200 --out final.png   # 用同样的指令按别的尺寸重画；加 --html p.html 另存回放网页
 python brush.py media [名字]                                      # 列出画材，或显示一种的完整配置
 python brush.py crop  <图片> X Y W H [--zoom 2]                  # 从任何图片裁一块（像素）
 ```
@@ -220,7 +257,7 @@ python brush.py crop  <图片> X Y W H [--zoom 2]                  # 从任何�
 - **从后往前搭底稿**，让每个位置都属于某个区域。区域的登记顺序就是铺色顺序。
 - **运笔方向跟着形体走**：桌面横、墙面斜、布料顺褶、头发顺发丝。小而圆的东西不要用 `around`，会画出靶心，用带 `spread` 的角度。
 - **`cut_in` 只用于硬轮廓**，并用 `against` 指明对象。对云这类软边的东西切边会留下一圈印子。
-- **`refine` 管不到 detail 太大的地方**：`broad` 管 detail ≤ 6，`coarse` ≤ 2.7，`fine` ≤ 1.7。想让某处更准，把那里的 detail 调小。
+- **`refine` 管不到 detail 太大的地方**：`broad` 管 detail ≤ 6，`coarse` ≤ 2.7，`fine` ≤ 1.7，`detail` ≤ 0.65。想让某处更准，把那里的 detail 调小。
 - **细线画两遍**：底稿里用 `line` 标出，最后再用 `strokes` 勾一次。高光、反光留到最后用 `dab` 厚点。
 - **一定要放大看**：全图缩略看不出眼睛歪没歪、边缘漏没漏底。`look(crop=..., zoom=2)`。
 - **哪里错了就地重画**：再画一个底稿形状、对那个区域 `block_in` 加 `refine`，或直接 `strokes` 盖上去。不必从头来。
@@ -233,4 +270,4 @@ python brush.py crop  <图片> X Y W H [--zoom 2]                  # 从任何�
 
 ## 自检
 
-`python tests/check.py`，约一分钟，六项都应为 PASS。
+`python tests/check.py`，约一分钟，七项都应为 PASS。

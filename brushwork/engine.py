@@ -710,6 +710,7 @@ class Canvas:
         self.pitch = pitch
         self.tooth = None
         self.update_tooth()
+        self.recorder = None                     # replay.Recorder: sees every batch painted, changes nothing
         self.n_strokes = 0
         self.n_trails = 0
         self.n_pix = 0
@@ -741,6 +742,8 @@ class Canvas:
         self.n_strokes += n
         self.n_trails += int(ntrail)
         self.n_pix += int(npix)
+        if self.recorder is not None:
+            self.recorder.strokes(pts, off, sp, order)
 
     def dry(self, amount=1.0):
         self.wet *= (1.0 - amount)

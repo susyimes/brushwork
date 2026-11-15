@@ -9,7 +9,9 @@
    stays within its tubes, and a saved painting remembers its palette.
 5. Media: every medium paints, renders and survives a save; a medium of your own works as a
    JSON file or a dict; mistakes in a medium are refused.
-6. The Astra example still paints exactly the picture it painted before the toolkit was made
+6. Replay: recording changes nothing in the painting, and the replay page holds every stroke and
+   every step (the command line's `replay --html` is exercised in 3).
+7. The Astra example still paints exactly the picture it painted before the toolkit was made
    general (pixel hash at 800 px wide; the reference hash is from the machine it was made on).
 """
 import hashlib
@@ -79,9 +81,36 @@ def check_cli(tmp):
         codes.append(run('do', s, os.path.join(d, f)))
     codes.append(run('look', s, '--crop', '560', '250', '200', '150', '--zoom', '2'))
     codes.append(run('undo', s))
-    codes.append(run('replay', s, '--width', '400', '--out', out))
+    html = os.path.join(tmp, 'replay.html')
+    codes.append(run('replay', s, '--width', '400', '--out', out, '--html', html))
     bad = run('do', s, os.path.join(d, 'no_such_file.json'))
-    return all(c == 0 for c in codes) and bad == 1 and os.path.getsize(out) > 10000, 'exit codes %s, bad input -> %d' % (codes, bad)
+    ok = all(c == 0 for c in codes) and bad == 1 and os.path.getsize(out) > 10000 and os.path.getsize(html) > 10000
+    return ok, 'exit codes %s, bad input -> %d' % (codes, bad)
+
+
+def check_replay(tmp):
+    """Recording changes nothing in the painting, and the replay page holds every stroke and
+    every step: the first at the bare canvas, the last at the finished picture."""
+    from brushwork import replay
+    shots = []
+    for record in (False, True):
+        st = Studio(320, 240, seed=6, log=quiet)
+        if record:
+            st.record(frame_width=320)
+        st.sk.background('#6f86a8', region='sky', direction=4, detail=4)
+        st.sk.ellipse((480, 560), 260, 180, color='#c06a3a', region='hill', detail=2)
+        st.paint()
+        st.strokes([dict(path=[[400, 470], [430, 462]], brush=6, color='#fff2dc', style='dab')])
+        shots.append(hashlib.sha256(st.render().tobytes()).hexdigest())
+    page = os.path.join(tmp, 'replay_check.html')
+    r = st.save_replay(page, title='check')
+    meta, nframes, data = replay.read(page)
+    at = [f['at'] for f in meta['frames']]
+    ok = (shots[0] == shots[1] and len(data['counts']) == st.cv.n_strokes == meta['strokes'] and at[0] == 0
+          and at[-1] == st.cv.n_strokes and at == sorted(at) and nframes == len(at) >= 4
+          and int(data['counts'].astype(np.int64).sum()) == len(data['points']))
+    return ok, '%d strokes, %d steps, page %.0f KB, painting unchanged by recording: %s' % (
+        len(data['counts']), nframes - 1, r['bytes'] / 1024, shots[0] == shots[1])
 
 
 def check_all_ops(tmp):
@@ -184,6 +213,7 @@ def main():
                          ('session command line', lambda: check_cli(tmp)),
                          ('palettes', lambda: check_palettes(tmp)),
                          ('media', lambda: check_media(tmp)),
+                         ('replay', lambda: check_replay(tmp)),
                          ('Astra example unchanged', check_astra)):
             good, note = fn()
             ok &= good
