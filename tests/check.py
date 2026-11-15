@@ -7,7 +7,9 @@
 3. The session command line works end to end: new, do, look, undo, replay.
 4. Palettes: the original thirteen tubes still give the same recipe table, a limited palette
    stays within its tubes, and a saved painting remembers its palette.
-5. The Astra example still paints exactly the picture it painted before the toolkit was made
+5. Media: every medium paints, renders and survives a save; a medium of your own works as a
+   JSON file or a dict; mistakes in a medium are refused.
+6. The Astra example still paints exactly the picture it painted before the toolkit was made
    general (pixel hash at 800 px wide; the reference hash is from the machine it was made on).
 """
 import hashlib
@@ -70,7 +72,9 @@ def check_cli(tmp):
             sys.stdout.close()
             sys.stdout = old
 
-    codes = [run('new', s, '--width', '500', '--height', '312', '--seed', '2')]
+    codes = [run('new', s, '--width', '500', '--height', '312', '--seed', '2'),
+             run('new', os.path.join(tmp, 'session_gouache'), '--width', '200', '--medium', 'gouache'),
+             run('media'), run('media', 'watercolor')]
     for f in ('01_sketch.json', '02_paint.json', '03_accents.json'):
         codes.append(run('do', s, os.path.join(d, f)))
     codes.append(run('look', s, '--crop', '560', '250', '200', '150', '--zoom', '2'))
@@ -119,6 +123,50 @@ def check_palettes(tmp):
         len(C.PIGMENT_DEFS), len(classic.rgb), tint)
 
 
+def check_media(tmp):
+    """Every medium paints, renders and survives a save; your own medium as a JSON file or a
+    dict works; mistakes in a medium are refused with a message."""
+    from brushwork import media as MEDIA
+    seen = {}
+    for name in MEDIA.names():
+        st = Studio(240, 192, seed=2, log=quiet, medium=name)
+        st.sk.background('#8aa0b8', region='sky', direction=8, detail=4)
+        st.sk.ellipse((500, 520), 200, 150, color='#c8642a', region='fruit', detail=2)
+        st.paint()
+        st.strokes([dict(path=[[420, 460], [450, 450]], brush=6, color='#fff6e0', style='dab')])
+        img = st.render()
+        if not np.isfinite(st.cv.col).all() or img.std() < 2:
+            return False, '%s painted nothing usable' % name
+        d = os.path.join(tmp, 'medium_' + name)
+        st.save(d)
+        if Studio.load(d, log=quiet).medium.name != name:
+            return False, '%s was not kept by save/load' % name
+        seen[name] = hashlib.sha256(img.tobytes()).hexdigest()
+    if len(set(seen.values())) != len(seen):
+        return False, 'two media painted the same picture'
+    own = dict(MEDIA.load('gouache').cfg, title='my gouache', body=0.2)
+    path = os.path.join(tmp, 'mine.json')
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(own, f, ensure_ascii=False)
+    for spec in (own, path):
+        st = Studio(160, 128, seed=2, log=quiet, medium=spec)
+        st.sk.background('#7a8c6a', region='field', direction=0, detail=4)
+        st.paint()
+        d = os.path.join(tmp, 'medium_own')
+        st.save(d)
+        if Studio.load(d, log=quiet).medium.body != 0.2:
+            return False, 'a medium of your own was not kept by save/load'
+        shutil.rmtree(d)
+    refused = 0
+    for bad in ('no_such_medium', dict(colour='red'), dict(all=dict(thickness=1))):
+        try:
+            MEDIA.load(bad)
+        except ValueError:
+            refused += 1
+    return refused == 3, '%d media (%s), own media as file and dict, %d mistakes refused' % (
+        len(seen), ', '.join(seen), refused)
+
+
 def check_astra():
     from paint import AstraPainter
     p = AstraPainter(800, log=quiet)
@@ -135,6 +183,7 @@ def main():
                          ('save/load is exact', lambda: check_persistence(tmp)),
                          ('session command line', lambda: check_cli(tmp)),
                          ('palettes', lambda: check_palettes(tmp)),
+                         ('media', lambda: check_media(tmp)),
                          ('Astra example unchanged', check_astra)):
             good, note = fn()
             ok &= good

@@ -1,0 +1,11 @@
+{
+  "title": "水粉 gouache",
+  "summary": "不透明、哑光、薄：平整的色块，清楚的边缘，笔触只在颜色上留下痕迹而不起棱；画在纸上，纸纹隐约可见。",
+  "use": "插画、动画背景式的风景，需要干净平整的色面和精确形状的画。脸和细节画起来比油画干净。",
+  "support": {"kind": "paper", "grain": 1.6, "coarse": 4.5, "broad": 14},
+  "primer": "#f3efe6",
+  "ground": "#d6c3ae",
+  "scale": {"ridge": 0.45, "furrow": 0.4, "blob": 0.35, "unmix": 0.55, "dry": 0.7, "skip": 0.6, "wobble": 0.8},
+  "body": 0.3,
+  "render": {"relief": 0.35, "spec": 0.0, "shadow": 0.12, "amb": 0.55, "weave_amp": 0.3, "weave_hide": 0.35, "blur": 0.8}
+}

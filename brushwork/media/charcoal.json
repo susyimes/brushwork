@@ -1,0 +1,14 @@
+{
+  "title": "炭笔 charcoal",
+  "summary": "炭条和炭精笔：只有黑白灰，干，在纸纹上碎开，可以揉开成柔和的灰调；白纸就是最亮处。",
+  "use": "素描、速写、明暗习作。底稿可以照常用彩色画，颜色会自动落成相应深浅的灰。",
+  "support": {"kind": "paper", "grain": 2.0, "coarse": 5.5, "broad": 18, "mix": [0.6, 0.28, 0.12]},
+  "primer": "#f1eee6",
+  "ground": false,
+  "palette": ["white", "ivory_black"],
+  "mend": false,
+  "all": {"dry": 0.6, "skip": 0.3, "pickup": 0.0, "unmix": 0.0, "furrow": 0.12, "ridge": 0.0, "blob": 0.0, "mult": 0.3, "opacity": 0.9},
+  "styles": {"blend": {"dry": 0.0, "pickup": 0.4, "opacity": 0.5, "mult": 0.0}, "dab": {"mult": 0.0}},
+  "body": 0.1,
+  "render": {"relief": 0.2, "spec": 0.0, "shadow": 0.0, "amb": 0.62, "weave_amp": 0.55, "weave_hide": 0.0, "blur": 0.6}
+}

@@ -2,7 +2,9 @@
 
 Works the way an oil painter does: toned ground, block-in from big brushes to small, cutting
 one shape in against another, stepping back to compare canvas with intention and correcting
-where it is furthest off, then explicit strokes for the drawing and the thick lights.
+where it is furthest off, then explicit strokes for the drawing and the thick lights.  The
+medium (media.py: oil by default, or gouache, watercolour, pastel ...) changes the paint and
+the support, not the passes.
 
 Sizes and positions are canvas units (the canvas is 1000 units wide); the same script paints
 a 900-pixel study or a 3200-pixel picture.  Nothing here knows what the picture is: that is
@@ -17,6 +19,7 @@ import cv2
 import numpy as np
 
 from . import color as C
+from . import media as MEDIA
 from .engine import (_COLS, DEFAULTS, NPAR, P_FILM, P_IRI, Canvas, Strokes, make_params,
                      trace_paths, value_noise)
 from .geom import arclen, catmull, ellipse_pts, normals, resample, tangents
@@ -81,12 +84,21 @@ def _imwrite(path, rgb, quality=92):
 
 class Studio:
     def __init__(self, width=1200, height=None, seed=1, sketch=None, guide_scale=None,
-                 primer='#e2dbcc', log=print, palette='full'):
+                 primer=None, log=print, palette=None, medium='oil'):
         """width, height: canvas size in pixels (height defaults to 5/4 of the width).
         sketch: a Sketch, or a function (GW, GH) -> sketch-like object; default an empty Sketch.
         The underdrawing lives at guide resolution: full size up to 1200 px wide, half above.
-        palette: the tubes colours are mixed from: 'full' (every colour, no black), 'classic' (the
-        original thirteen), 'with_black', or a list of tube and palette names for a limited palette."""
+        medium: 'oil' (default), 'acrylic', 'gouache', 'watercolor', 'pastel', 'charcoal', 'ink',
+        the path of your own medium JSON file, or a dict (see media.py).
+        primer: colour of the bare support (default: the medium's).
+        palette: the tubes colours are mixed from (default: the medium's, else 'full'): 'full'
+        (every colour, no black), 'classic' (the original thirteen), 'with_black', or a list of
+        tube and palette names for a limited palette."""
+        self.medium = MEDIA.load(medium)
+        if primer is None:
+            primer = self.medium.primer or '#e2dbcc'
+        if palette is None:
+            palette = self.medium.palette or 'full'
         self.W = int(width)
         self.H = int(height) if height else self.W * 5 // 4
         self.S = self.W / 1000.0
@@ -109,7 +121,8 @@ class Studio:
         self.rng = np.random.default_rng(seed)
         self.palette = palette if isinstance(palette, str) else list(palette)
         self.book = C.RecipeBook(self.palette)
-        self.cv = Canvas(self.W, self.H, ground=C.as_lin(primer), pitch=max(3.0, 2.9 * self.S), seed=seed + 1)
+        self.cv = Canvas(self.W, self.H, ground=C.as_lin(primer), pitch=max(3.0, 2.9 * self.S), seed=seed + 1,
+                         support=self.medium.support_px(self.S))
         self.tk = self.S ** 0.5
         self._lab = None
         self._lab_ver = None
@@ -182,8 +195,9 @@ class Studio:
         return self._blur[k]
 
     def params(self, n, style, R_px, **over):
-        d = dict(STYLE[style])
+        d = self.medium.preset(style, STYLE[style])
         d.update(over)
+        self.medium.finish(d)
         d['thick'] = np.asarray(d['thick']) * self.tk
         return make_params(n, radius=R_px, **d)
 
@@ -315,8 +329,10 @@ class Studio:
                 L = 2 * d[0]
             pl = resample(pl, step=max(1.0, rpx * 0.4))
             pls.append(pl.astype(np.float32))
-            st = dict(STYLE[it.get('style', style)])
+            name = it.get('style', style)
+            st = self.medium.preset(name, STYLE[name])
             st.update({k: v for k, v in it.items() if k in _COLS})
+            self.medium.finish(st)
             st['radius'] = rpx
             st['thick'] = st['thick'] * self.tk
             if 'loadlen' not in it:
@@ -400,6 +416,8 @@ class Studio:
     def uncovered(self, mask, thr=0.22):
         """Where, inside mask, the toned ground is still showing (guide-res bool)."""
         added = cv2.resize(self.cv.thk - self.thk0, (self.GW, self.GH), interpolation=cv2.INTER_AREA)
+        if self.medium.body != 1.0:                    # thin paint is thin everywhere, not missing
+            thr = thr * self.medium.body
         return mask & (added < thr * self.tk)
 
     def sheen_glaze(self, mask, key, sizes=((9, (70, 220), 0.9), (5, (50, 160), 0.8)), strength=1.0, thresh=0.34,
@@ -616,10 +634,13 @@ class Studio:
     def mend(self, regions=None, brush=1.1, max_n=60000):
         """Look over the given regions at full resolution for pinholes where the ground still
         shows between strokes, and touch each one in with a small dab of the right colour."""
+        if not self.medium.mend_holes:                  # pastel, charcoal: the paper showing through is the look
+            return 0
         sk = self.sk
         regs = self.rids(regions)
         reg_full = cv2.resize(sk.region, (self.W, self.H), interpolation=cv2.INTER_NEAREST)
-        hole = ((self.cv.thk - self.thk0) < 0.10 * self.tk) & np.isin(reg_full, regs)
+        thr = 0.10 if self.medium.body == 1.0 else 0.10 * self.medium.body
+        hole = ((self.cv.thk - self.thk0) < thr * self.tk) & np.isin(reg_full, regs)
         ys, xs = np.nonzero(hole)
         if len(ys) == 0:
             return 0
@@ -659,7 +680,10 @@ class Studio:
             edge = np.zeros(r.shape, bool)
             edge[:, 1:] |= r[:, 1:] != r[:, :-1]
             edge[1:, :] |= r[1:, :] != r[:-1, :]
-            from_edge = cv2.distanceTransform((~edge).astype(np.uint8), cv2.DIST_L2, 3) / self.s
+            if edge.any():
+                from_edge = cv2.distanceTransform((~edge).astype(np.uint8), cv2.DIST_L2, 3) / self.s
+            else:                                       # one region only: no border to keep away from
+                from_edge = np.full(r.shape, np.inf, np.float32)
         total = 0
         for R, th, ln in passes:
             err = self.error_map(R * 0.35)
@@ -779,8 +803,12 @@ class Studio:
     def paint(self, ground=None, rounds=2):
         """The whole routine for a finished underdrawing: tone the ground, underpaint, block in
         back to front, mend pinholes, then refine against the sketch.  Add your own strokes
-        afterwards for the drawing and the accents."""
-        self.tone_ground(color=ground)
+        afterwards for the drawing and the accents.  ground: the toning colour (default: the
+        medium's), or False to leave the support bare."""
+        if ground is None:
+            ground = self.medium.ground
+        if ground is not False:
+            self.tone_ground(color=ground)
         normal = [r for r in self.rids() if not self._is_black(r)]
         self.underpaint(normal)
         self.block_in()
@@ -802,7 +830,7 @@ class Studio:
         colour without the relief lighting."""
         views = []
         if what in ('canvas', 'both'):
-            views.append(self.cv.render(lit=lit))
+            views.append(self.render(lit=lit))
         if what in ('sketch', 'both'):
             sk8 = (C.lin_to_srgb(np.clip(self.sk.target, 0, 1)) * 255 + 0.5).astype(np.uint8)
             views.append(cv2.resize(sk8, (self.W, self.H), interpolation=cv2.INTER_LINEAR))
@@ -831,12 +859,17 @@ class Studio:
             path = os.path.join(self.view_dir or '.', 'look_%03d.jpg' % self._looks)
         return _imwrite(path, img)
 
+    def render(self, lit=True, **kw):
+        """The painting as an 8-bit RGB image, its surface lit the way its medium wants (gloss and
+        relief for oil, flat and matte for gouache ...); keywords override (Canvas.render)."""
+        return self.cv.render(lit=lit, **{**self.medium.render, **kw})
+
     def save_image(self, path, lit=True):
         """Write the finished painting at full resolution (PNG or JPG by extension)."""
-        return _imwrite(path, self.cv.render(lit=lit), quality=95)
+        return _imwrite(path, self.render(lit=lit), quality=95)
 
     def stats(self):
-        return dict(width=self.W, height=self.H, seed=self.seed, palette=self.palette,
+        return dict(width=self.W, height=self.H, seed=self.seed, medium=self.medium.name, palette=self.palette,
                     brushstrokes=int(self.cv.n_strokes),
                     bristle_trails=int(self.cv.n_trails), pixels_touched=int(self.cv.n_pix),
                     stages=[dict(name=n, strokes_after=int(k)) for n, k in self.stages])
@@ -850,7 +883,8 @@ class Studio:
                  iri=cv.iri, ifd=cv.ifd, tooth=cv.tooth, thk0=self.thk0)
         self.sk.save(os.path.join(d, 'sketch.npz'))
         meta = dict(format=1, width=self.W, height=self.H, seed=self.seed, guide_scale=self.guide_scale,
-                    primer=self.primer, palette=self.palette, n_strokes=int(cv.n_strokes), n_trails=int(cv.n_trails),
+                    primer=self.primer, palette=self.palette, medium=self.medium.spec,
+                    n_strokes=int(cv.n_strokes), n_trails=int(cv.n_trails),
                     n_pix=int(cv.n_pix), stages=self.stages, looks=self._looks,
                     rng=self.rng.bit_generator.state, canvas_rng=cv.rng.bit_generator.state)
         with open(os.path.join(d, 'meta.json'), 'w', encoding='utf-8') as f:
@@ -864,7 +898,8 @@ class Studio:
         sk = Sketch.load(os.path.join(d, 'sketch.npz'))
         st = cls(meta['width'], meta['height'], seed=meta['seed'], sketch=sk, guide_scale=meta['guide_scale'],
                  primer=meta['primer'], log=log,
-                 palette=meta.get('palette', 'classic'))      # paintings saved before palettes used the first thirteen
+                 palette=meta.get('palette', 'classic'),      # paintings saved before palettes used the first thirteen
+                 medium=meta.get('medium', 'oil'))
         z = np.load(os.path.join(d, 'canvas.npz'))
         cv = st.cv
         for k in ('col', 'sca', 'wet', 'hgt', 'thk', 'iri', 'ifd', 'tooth'):

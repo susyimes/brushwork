@@ -1,0 +1,13 @@
+{
+  "title": "水彩 watercolor",
+  "summary": "透明的淡彩：白纸从颜色里透出来，湿的颜色彼此晕开，边缘柔而不齐，淡处显出纸纹。颜色一层层叠上去只会更深。",
+  "use": "清淡、透气的风景、天空、花卉、速写。亮处在底稿里就留成纸色；暗处一层层叠。点高光的 dab 用的是不透明的白，像水彩画家补的那一点白粉。",
+  "support": {"kind": "paper", "grain": 2.2, "coarse": 7, "broad": 22, "mix": [0.5, 0.35, 0.15]},
+  "primer": "#f8f5ee",
+  "ground": false,
+  "scale": {"unmix": 0.6, "dry": 0.5, "skip": 0.5, "wobble": 1.35, "ragged": 1.4, "furrow": 0.2, "ridge": 0.0, "blob": 0.0},
+  "all": {"opacity": 0.72, "pickup": 0.22, "mult": 0.22},
+  "styles": {"line": {"opacity": 0.88, "mult": 0.4}, "dab": {"opacity": 0.92, "mult": 0.0}, "blend": {"opacity": 0.55, "mult": 0.0}},
+  "body": 0.06,
+  "render": {"relief": 0.25, "spec": 0.0, "shadow": 0.0, "amb": 0.6, "weave_amp": 0.55, "weave_hide": 0.02, "blur": 0.7}
+}

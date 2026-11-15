@@ -1,6 +1,6 @@
 # brushwork：给 agent 用的真实笔刷绘画工具
 
-用 Python 模拟油画笔，一笔一笔地画。agent 决定画什么、怎么画；工具负责让颜料像颜料：鬃毛带料、飞白、湿画带色、厚涂起伏、布纹和打光。不读入任何图片，不调用任何生图模型。
+用 Python 模拟真实的画笔和画材，一笔一笔地画。agent 决定画什么、怎么画；工具负责让颜料像颜料：鬃毛带料、飞白、湿画带色、厚涂起伏、布纹或纸纹，和最后的打光。画材可选油画（默认）、丙烯、水粉、水彩、色粉、炭笔、水墨，每一种都是一份配置，也可以自己写。不读入任何图片，不调用任何生图模型。
 
 这个工程最初是为画《五彩斑斓的黑》写的，现在画笔和作画流程已经和那幅画分开，可以画任何题材。
 
@@ -68,6 +68,7 @@ python examples\astra_iridescent_black\paint.py            # 约 80 秒；--widt
 python examples\still_life.py                              # --width 1000 出小稿；--palette white ivory_black 画成单色
 python examples\brush_sheet.py                             # 笔触试样
 python examples\palette_chart.py                           # 颜料色卡
+python examples\media_sheet.py                             # 同一幅静物用七种画材各画一遍
 ```
 
 海景按上面命令行会话的六条命令画。人物那幅用同一个种子重画，输出文件逐字节相同。
@@ -98,6 +99,24 @@ python examples\palette_chart.py                           # 颜料色卡
 
 黑色默认不上调色盘：不加黑也能调出 `#1a1a1d` 的中性深色，更深的近黑带一点色相，暗部因此是活的。黑只多给出比这更深的中性黑，所以留给点名要它的画。
 
+## 画材
+
+建画布时选：`Studio(..., medium='gouache')` 或 `brush.py new <会话> --medium gouache`，不写就是油画。
+
+| 画材 | 特点 |
+| --- | --- |
+| `oil` 油画 | 默认。厚涂起棱、湿画带色、柔和光泽，画在布上 |
+| `acrylic` 丙烯 | 像油画但干得快：混色少、颜色干脆、半哑光 |
+| `gouache` 水粉 | 不透明、哑光、薄，平整色块，画在纸上 |
+| `watercolor` 水彩 | 半透明淡彩，纸纹透出，边缘柔而不齐，越叠越深 |
+| `pastel` 色粉 | 干，每笔一色，落在纸纹凸处，中间调色纸从笔触间透出 |
+| `charcoal` 炭笔 | 黑白灰，干，在纸纹上碎开 |
+| `ink` 水墨 | 墨分浓淡，飞白，宣纸纤维 |
+
+画材改变的是颜料和画在什么上面，不改变作画步骤：同一份底稿和同样的调用，换个画材就是另一种画。`python brush.py media` 列出全部画材，`python examples\media_sheet.py` 把同一幅静物用每种画材各画一遍。
+
+每种画材是 `brushwork/media/` 里的一份 JSON：支撑物（布纹，或纸纹的颗粒大小和宣纸纤维）、底色、要不要罩底色、默认调色盘、对各种笔法参数的乘数和替换、颜料能堆多厚、成品怎么打光。自己写一份，把路径当画材传进去即可，键的说明在 `brushwork/media.py` 开头。水彩和水墨是用半透明笔触加纸纹做的近似，没有颜料在湿纸上的渗化。
+
 ## 作画流程
 
 底稿规定每个位置的颜色、所属区域、运笔方向和最小用笔。作画按画家的顺序走：罩底色，跨区域打底，从后往前逐区域铺色，沿轮廓切边，对照底稿把偏差大的地方用更小的笔重画，最后手工落笔勾线点高光。每一步之后都可以存图来看，再决定下一步。
@@ -105,13 +124,14 @@ python examples\palette_chart.py                           # 颜料色卡
 ## 目录
 
 - `brush.py`：命令行入口。
-- `brushwork/engine.py`：鬃毛画笔、画布、打光，numba 编译。
+- `brushwork/engine.py`：鬃毛画笔、画布和纸、打光，numba 编译。
+- `brushwork/media.py`、`brushwork/media/*.json`：画材，每种一份配置。
 - `brushwork/color.py`：颜料、混色、配方查找、薄膜干涉色。
 - `brushwork/sketch.py`：底稿，用形状和造型调用搭出来。
 - `brushwork/studio.py`：作画的各个步骤，以及存图、存档。
 - `brushwork/cli.py`：会话、JSON 指令、撤销、重放。
 - `brushwork/geom.py`：曲线和栅格化工具。
-- `examples/`：三幅画的源头、笔触试样和颜料色卡。
+- `examples/`：三幅画的源头、笔触试样、颜料色卡和画材对照。
 - `skill/SKILL.md`：给 agent 的用法说明。
 - `tests/check.py`：自检，约一分钟。
 
@@ -123,7 +143,7 @@ python examples\palette_chart.py                           # 颜料色卡
 python tests\check.py
 ```
 
-五项：每个操作都能运行；存档再读取后继续画，结果与一次画完相同；命令行会话全流程可用；调色盘（最初 13 管的配方表不变、限定调色盘不越界、存档记得调色盘）；人物那幅与改造前逐像素一致。
+六项：每个操作都能运行；存档再读取后继续画，结果与一次画完相同；命令行会话全流程可用；调色盘（最初 13 管的配方表不变、限定调色盘不越界、存档记得调色盘）；画材（每种都能画、能存档，自写的 JSON 和 dict 可用，写错会被拒绝）；人物那幅与改造前逐像素一致。
 
 ## 关于《五彩斑斓的黑》
 

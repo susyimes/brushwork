@@ -1,0 +1,14 @@
+{
+  "title": "水墨 ink",
+  "summary": "墨和水，画在宣纸上：浓淡干湿，笔锋起收，干笔处出飞白；纸里有长纤维。",
+  "use": "写意山水、花鸟、人物线描。只有墨色，浓淡由白加黑调出；留白就是纸。笔画用 taper 高的 line、hair 最像。",
+  "support": {"kind": "paper", "grain": 1.2, "coarse": 3.5, "broad": 12, "fibres": 0.5},
+  "primer": "#f1e9d8",
+  "ground": false,
+  "palette": ["white", "ivory_black"],
+  "all": {"taper": 0.8, "wobble": 1.2, "ragged": 0.9, "pickup": 0.15, "unmix": 0.3, "mult": 0.32, "opacity": 0.82,
+          "dry": 0.55, "skip": 0.45, "ridge": 0.0, "blob": 0.0},
+  "styles": {"blend": {"mult": 0.0, "dry": 0.0, "skip": 0.0}, "dab": {"mult": 0.15}, "smooth": {"dry": 0.3, "skip": 0.2}},
+  "body": 0.05,
+  "render": {"relief": 0.12, "spec": 0.0, "shadow": 0.0, "amb": 0.65, "weave_amp": 0.35, "weave_hide": 0.0, "blur": 0.7}
+}

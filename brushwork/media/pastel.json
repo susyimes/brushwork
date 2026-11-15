@@ -1,0 +1,13 @@
+{
+  "title": "色粉 pastel",
+  "summary": "干的色粉笔：不在笔上调色，每一笔一个颜色，只落在纸纹的凸处，断断续续；哑光，几乎没有厚度，颜色靠一层层叠出来、揉开。",
+  "use": "柔和的肖像、风景、天空。默认画在中间调的暖灰色纸上，纸色会从笔触间透出来，成为画的一部分；亮色放在最后。primer 可以换成更接近画面平均色调的纸色。",
+  "support": {"kind": "paper", "grain": 2.6, "coarse": 6, "broad": 20, "mix": [0.65, 0.25, 0.10]},
+  "primer": "#a89c8a",
+  "ground": false,
+  "mend": false,
+  "all": {"dry": 0.66, "skip": 0.32, "pickup": 0.0, "unmix": 0.05, "furrow": 0.15, "ridge": 0.0, "blob": 0.0, "wobble": 0.7},
+  "styles": {"blend": {"dry": 0.0, "pickup": 0.4, "opacity": 0.5}, "smooth": {"dry": 0.65}},
+  "body": 0.12,
+  "render": {"relief": 0.2, "spec": 0.0, "shadow": 0.0, "amb": 0.62, "weave_amp": 0.6, "weave_hide": 0.0, "blur": 0.6}
+}

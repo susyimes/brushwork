@@ -1,21 +1,21 @@
 ---
 name: brushwork-painting
-description: "用 Python 模拟的真实油画笔作画（brushwork）：自己构底稿、铺色、细化、点高光，一笔一笔画出成品。"
-version: 1.0.0
+description: "用 Python 模拟的真实画笔和画材作画（brushwork）：油画、丙烯、水粉、水彩、色粉、炭笔、水墨；自己构底稿、铺色、细化、点高光，一笔一笔画出成品。"
+version: 1.1.0
 platforms: [windows, linux]
 metadata:
   hermes:
-    tags: [painting, brush, oil, python, 画笔, 油画, 绘画, 模拟笔刷]
+    tags: [painting, brush, oil, gouache, watercolor, pastel, charcoal, ink, python, 画笔, 油画, 水粉, 水彩, 色粉, 炭笔, 水墨, 绘画, 模拟笔刷]
     related_skills: []
 ---
 
-# brushwork：用模拟油画笔作画
+# brushwork：用模拟的真实画笔和画材作画
 
-一个画布加一套画家的动作。你决定画什么、每一笔怎么走；它负责让颜料像颜料：鬃毛带料、飞白、湿画带色、厚涂起伏、布纹和打光。不读入图片，不调用任何生图模型。
+一个画布加一套画家的动作。你决定画什么、每一笔怎么走；它负责让颜料像颜料：鬃毛带料、飞白、湿画带色、厚涂起伏、布纹或纸纹，和最后的打光。画材可以选：油画（默认）、丙烯、水粉、水彩、色粉、炭笔、水墨，也可以自己写一个。不读入图片，不调用任何生图模型。
 
 ## 何时使用
 
-用户要求「用 Python 模拟真实画笔作画」「Painted fully in Python」，或点名 brushwork、这套画笔工具时使用。
+用户要求「用 Python 模拟真实画笔作画」「Painted fully in Python」，要用某种真实画材（水粉、水彩、色粉、炭笔、水墨……）一笔一笔画，或点名 brushwork、这套画笔工具时使用。
 
 不用于：照着现成图片转绘（工具不读图）、需要文字排版的画面、普通的 AI 生图请求（那走生图 skill）。
 
@@ -43,6 +43,7 @@ from brushwork import Studio
 - **颜色**：`'#rrggbb'` 或 `[r, g, b]`（0–255）。工具会把它换成真实颜料的配方，给出这些颜料调得出的最接近的颜色。默认调色盘是 25 管彩色加白，不含黑，深色是混出来的；见下面「调色盘」。
 - **底稿（Sketch，`st.sk`）**：动笔前的意图。用形状从后往前搭：每个形状可以规定它覆盖处的颜色、所属区域（region）、运笔方向（direction）、最小用笔（detail）。再用几个造型调用把平涂变成有体积的东西。
 - **作画（Studio，`st`）**：罩底 → 整体打底 → 逐区域铺色 → 切边 → 对照底稿修正 → 手工落笔。
+- **画材（medium）**：建画布时选，`Studio(..., medium='gouache')`。它改变的是颜料和画在什么上面，作画的步骤和所有操作都一样；见下面「画材」。
 - **看（look）**：把画面存成图片，自己打开看，再决定下一步。这一步不能省。
 
 ## 流程
@@ -164,15 +165,51 @@ dict(path=[[x, y], ...],      # 两个点是一个点触或一段直线
 - **颜料有边界**：屏幕上的纯蓝 `#0000ff`、纯品红 `#ff00ff`、纯绿 `#00ff00` 不是颜料调得出的颜色，会得到最接近的 `#2a3bc9`、`#e150c4`、`#78e73a`。纯黑 `#000000` 同理，最深是 `#0e0e0f`。
 - **看颜料**：`python brush.py palette` 列出全部颜料管的色值、调色盘、style 的参数、chromatic black 的名字和珠光色名；`python examples/palette_chart.py` 画一张色卡到 `out/palette_chart.jpg`。
 
+## 画材
+
+建画布时选定，之后不能换：`Studio(width, height, medium='watercolor')`，命令行是 `brush.py new <会话目录> --medium watercolor`。不写就是油画。
+
+| 画材 | 画出来是什么样 | 适合 |
+| --- | --- | --- |
+| `oil` 油画（默认） | 厚涂起棱，湿的颜色互相带色，柔和的光泽，亚麻布纹 | 要颜料的分量、厚涂高光、深而透亮的暗部 |
+| `acrylic` 丙烯 | 像油画，但干得快：混色少、颜色干脆、边缘利落、半哑光 | 色块鲜明、边缘清楚的画 |
+| `gouache` 水粉 | 不透明、哑光、薄：平整色块，笔触只留在颜色上，纸纹隐约 | 插画、动画背景风格；脸和细节比油画干净 |
+| `watercolor` 水彩 | 半透明淡彩，纸纹透出，边缘柔而不齐，叠一层深一层 | 清淡的风景、天空、花卉 |
+| `pastel` 色粉 | 干，每笔一个颜色，只落在纸纹凸处，中间调的色纸从笔触间透出 | 柔和的肖像、风景 |
+| `charcoal` 炭笔 | 只有黑白灰，干，在纸纹上碎开，可以揉开 | 素描、速写、明暗习作 |
+| `ink` 水墨 | 墨分浓淡，干笔出飞白，宣纸纤维，只有墨色 | 写意、线描 |
+
+- **画材带着自己的默认值**：底色（`primer`）、要不要先罩一层底色、调色盘。水彩、水墨、炭笔保留纸的白，不罩底色；色粉画在中间调的色纸上；炭笔和水墨默认只用白加黑。这些都可以在建画布时另外指定。
+- **底稿照常用彩色画**：调色盘只有黑白时，颜色会自动落成相应深浅的灰。
+- **透明的画材只能越叠越深**：水彩、炭笔、水墨的笔触带一部分透明罩染，同一处反复加笔会变深，修正也很难把它改亮。亮处在底稿里就留成纸色，从浅往深画，少在一个地方来回补。点高光的 `dab` 仍然是不透明的白。
+- **色粉、炭笔不补针孔**：纸色从笔触间透出来就是它们的样子，`mend()` 对它们不起作用。
+- **它们是近似**：水彩和水墨用半透明的笔触加纸纹来模拟，没有颜料在湿纸上的渗化、水渍。
+- **看画材**：`python brush.py media` 列出全部画材和用途，`brush.py media gouache` 显示一份完整配置；`python examples/media_sheet.py` 把同一幅静物用每种画材各画一遍，存到 `out/media_sheet.jpg`。
+
+**自己写一种画材**：画材是配置，不是代码。复制 `brushwork/media/` 里最接近的一份 JSON，改了以后把路径当画材传进去：`medium='my_gouache.json'`，或 `--medium my_gouache.json`。也可以直接传一个 dict。会话会把整份配置存下来，换机器 `replay` 也不需要原文件。可用的键：
+
+| 键 | 含义 |
+| --- | --- |
+| `support` | 画在什么上面：`{"kind": "canvas"}` 布纹；`{"kind": "paper", "grain": 1.6, "coarse": 4.5, "broad": 14, "fibres": 0}` 纸纹三种尺寸（单位）和宣纸纤维 |
+| `primer` / `ground` / `palette` | 纸或布的底色；`paint()` 先罩的底色，`false` 表示不罩；默认调色盘 |
+| `scale` | 乘在每种笔法（style）原有参数上的系数 |
+| `all` / `styles` | 直接替换参数：`all` 对每种笔法，`styles` 对某一种，如 `{"line": {"opacity": 0.9}}` |
+| `body` | 颜料能堆多厚：最后乘在每一笔的厚度上，包括各步骤和你自己指定的（油画 1，水粉 0.3，水彩 0.06） |
+| `render` | 成品怎么打光：`relief` 起伏、`spec` 光泽、`shadow` 投影、`weave_amp` 纸纹或布纹的强弱 |
+| `mend` | `false` 表示纸色透出就是要的效果，不补针孔 |
+
+笔触参数都可以写进 `all`、`styles`、`scale`：`opacity` `thick` `dry`（多早在纸纹上碎开） `pickup`（带起湿颜料） `unmix`（笔上颜色不匀） `furrow` `ridge` `blob`（起伏） `taper` `skip` `wobble` `ragged`（手的稳定程度） `mult`（0 不透明，1 只会把下面变深的透明罩染）。完整说明在 `brushwork/media.py` 开头。
+
 ## 命令行会话
 
 ```
-python brush.py new   <会话目录> --width 1000 --height 625 --seed 2 [--palette with_black]
+python brush.py new   <会话目录> --width 1000 --height 625 --seed 2 [--medium gouache] [--palette with_black]
 python brush.py do    <会话目录> ops.json [--look view.jpg]     # ops.json 是 [{"op": ...}, ...]，- 表示从标准输入读
 python brush.py look  <会话目录> --out v.jpg [--crop X Y W H --zoom 2] [--what both]
 python brush.py undo  <会话目录>                                 # 撤销上一次 do，最多三步
 python brush.py info  <会话目录>
 python brush.py replay <会话目录> --width 3200 --out final.png   # 用同样的指令按别的尺寸重画
+python brush.py media [名字]                                      # 列出画材，或显示一种的完整配置
 python brush.py crop  <图片> X Y W H [--zoom 2]                  # 从任何图片裁一块（像素）
 ```
 
@@ -189,8 +226,11 @@ python brush.py crop  <图片> X Y W H [--zoom 2]                  # 从任何�
 - **哪里错了就地重画**：再画一个底稿形状、对那个区域 `block_in` 加 `refine`，或直接 `strokes` 盖上去。不必从头来。
 - **自己用循环生成笔触时**（比如上千根发丝），颜色要取自这一笔真正落在的区域，别取到旁边物体上。
 - **想要油画的碎色就调高 `vary`**，想要干净准确的颜色就调低。
+- **小圆点要叠出来**：一笔比它自己还宽的短笔，会被两端的收笔吃掉，几乎什么都不留。瞳孔、圆的高光这类小点，用几道并排的短横笔叠成。
+- **精细的小东西一层干了再画下一层**：画眼睛时每层之间 `st.cv.dry(1.0)`，笔触里写 `pickup=0`，否则后一笔会把前一层还湿的颜料带起来，瞳孔和虹膜的深色会被混掉。
+- **薄云、卷云用底稿画**：在底稿里叠几条半透明、边缘虚化的 `ribbon`，让天空自己的笔触去画它们。用噪声阈值做会碎成一片小点，用 `strokes` 直接画会变成生硬的白弧。
 - 速度参考：1000 像素宽的静物约 10 秒，2000 像素的海景约 5 秒，3200×4000 的人物约 80 秒。
 
 ## 自检
 
-`python tests/check.py`，约一分钟，五项都应为 PASS。
+`python tests/check.py`，约一分钟，六项都应为 PASS。

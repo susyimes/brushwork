@@ -1,0 +1,10 @@
+{
+  "title": "丙烯 acrylic",
+  "summary": "像油画一样有笔触和厚度，但干得快：湿画带色少，颜色干脆，边缘利落，表面是半哑光。",
+  "use": "色块鲜明、边缘清楚的画；想要油画那样的笔触，又不要那么浓的光泽和那么多湿画混色的时候。",
+  "support": {"kind": "canvas"},
+  "primer": "#ece9e2",
+  "scale": {"pickup": 0.35, "unmix": 0.75, "ragged": 0.8},
+  "body": 0.75,
+  "render": {"relief": 0.85, "spec": 0.035, "shin": 30, "shadow": 0.45}
+}

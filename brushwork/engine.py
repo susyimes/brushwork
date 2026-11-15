@@ -615,6 +615,33 @@ def make_weave(W, H, pitch, rng):
     return h.astype(np.float32)
 
 
+def _streaks(W, H, cell, stretch, angle, rng):
+    """Value noise drawn out along one direction (degrees)."""
+    big = int(math.ceil(math.hypot(W, H))) + 8
+    n = value_noise(max(8, big // max(1, int(stretch))), big, cell, rng)
+    n = cv2.resize(n, (big, big), interpolation=cv2.INTER_CUBIC)
+    M = cv2.getRotationMatrix2D((big / 2, big / 2), -angle, 1.0)
+    M[0, 2] -= (big - W) / 2
+    M[1, 2] -= (big - H) / 2
+    return cv2.warpAffine(n, M, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
+
+
+def make_paper(W, H, rng, grain=4.0, coarse=12.0, broad=40.0, mix=(0.55, 0.30, 0.15), fibres=0.0, fibre_len=28.0):
+    """Paper height in [0,1]: soft bumps at three sizes (pixels), mixed; with `fibres` > 0 the
+    long fibres of rice paper laid over them in every direction."""
+    h = (mix[0] * value_noise(W, H, max(1.5, grain), rng) + mix[1] * value_noise(W, H, max(2.0, coarse), rng)
+         + mix[2] * value_noise(W, H, max(3.0, broad), rng))
+    if fibres > 0:
+        f = np.zeros((H, W), np.float32)
+        for a in rng.uniform(0, 180, 4):
+            s = _streaks(W, H, max(1.5, grain * 0.7), max(2.0, fibre_len / max(1.0, grain)), a, rng)
+            f = np.maximum(f, np.clip((s - 0.62) / 0.2, 0, 1))
+        h = (1 - fibres) * h + fibres * (0.5 * h + 0.5 * f)
+    h -= h.min()
+    h /= max(1e-6, h.max())
+    return h.astype(np.float32)
+
+
 class Strokes:
     """A batch of strokes in CSR form, ready for the kernel."""
 
@@ -660,7 +687,8 @@ class Strokes:
 
 
 class Canvas:
-    def __init__(self, W, H, ground, pitch, seed=1, ground_S=0.8):
+    def __init__(self, W, H, ground, pitch, seed=1, ground_S=0.8, support=None):
+        """support: None for a woven canvas, or make_paper() arguments (sizes in pixels) for paper."""
         self.W, self.H = W, H
         rng = np.random.default_rng(seed)
         self.rng = rng
@@ -673,8 +701,12 @@ class Canvas:
         self.iri = np.zeros((H, W), np.float32)
         self.ifd = np.full((H, W), 600.0, np.float32)
         self.stamp = np.zeros((H, W), np.int32)
-        self.weave = make_weave(W, H, pitch, rng)
-        self.grain = value_noise(W, H, max(2.0, pitch * 0.35), rng)
+        if support is None:
+            self.weave = make_weave(W, H, pitch, rng)                  # (the name stays: it is the support's relief)
+            self.grain = value_noise(W, H, max(2.0, pitch * 0.35), rng)
+        else:
+            self.weave = make_paper(W, H, rng, **support)
+            self.grain = value_noise(W, H, max(1.5, support.get('grain', 4.0) * 0.5), rng)
         self.pitch = pitch
         self.tooth = None
         self.update_tooth()
