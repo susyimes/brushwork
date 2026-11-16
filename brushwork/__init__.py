@@ -15,9 +15,12 @@ from .color import (CHROMATIC_BLACKS, PALETTES, PIG, PIGMENT_DEFS, SHEEN_HUES, a
 from .geom import arclen, catmull, ellipse_pts, normals, offset, resample, ribbon, tangents
 from .sketch import Sketch
 from .studio import BROAD, COARSE, DETAIL, FINE, SIZES, STYLE, Studio
+from .animation import Animation, PaintedLayer, RepaintLayer, StrokeLayer, paint_over
+from .strokes import StrokeTape
 from . import media
 from .cli import run_ops
 
-__all__ = ['Studio', 'Sketch', 'media', 'run_ops', 'STYLE', 'SIZES', 'BROAD', 'COARSE', 'FINE', 'DETAIL', 'SHEEN_HUES', 'CHROMATIC_BLACKS',
+__all__ = ['Studio', 'Sketch', 'Animation', 'PaintedLayer', 'RepaintLayer', 'StrokeLayer', 'StrokeTape', 'paint_over',
+           'media', 'run_ops', 'STYLE', 'SIZES', 'BROAD', 'COARSE', 'FINE', 'DETAIL', 'SHEEN_HUES', 'CHROMATIC_BLACKS',
            'PIGMENT_DEFS', 'PIG', 'PALETTES', 'palette_tubes', 'as_lin', 'rgb8', 'recipe', 'film_for', 'catmull', 'resample', 'ellipse_pts',
            'ribbon', 'tangents', 'normals', 'offset', 'arclen']

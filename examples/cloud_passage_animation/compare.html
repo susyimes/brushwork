@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>云渡 · 三种动画画法</title>
+  <style>
+    *{box-sizing:border-box} html,body{margin:0;height:100%;background:#121922;color:#f2efe6}
+    body{font-family:"Microsoft YaHei",system-ui,sans-serif}
+    main{height:100%;height:100dvh;display:grid;grid-template-rows:minmax(0,1fr) auto}
+    .picture{display:grid;place-items:center;min-height:0;overflow:hidden}
+    video{display:block;width:100%;height:100%;min-height:0;object-fit:contain}
+    video[hidden]{display:none}
+    nav{display:flex;align-items:center;justify-content:center;gap:.4rem;flex-wrap:wrap;
+        padding:.7rem .55rem max(.7rem,env(safe-area-inset-bottom));background:#17212d}
+    button{font:inherit;font-size:.88rem;color:#d1d9e1;border:1px solid #52606b;
+           background:transparent;border-radius:1.3rem;padding:.40rem .85rem;cursor:pointer}
+    button[aria-pressed=true]{background:#e5dfca;border-color:#e5dfca;color:#17212d}
+    button:focus-visible{outline:2px solid #9dccf2;outline-offset:2px}
+    #seek-blink{border:0;text-decoration:underline;text-underline-offset:3px}
+    @media(max-width:540px){nav{gap:.28rem}button{font-size:.8rem;padding:.42rem .62rem}}
+  </style>
+</head>
+<body><main>
+  <div class="picture"><!-- views --></div>
+  <nav aria-label="选择动画画法"><!-- modes --><button id="seek-blink">定位眨眼</button></nav>
+</main>
+<script>
+  const buttons = [...document.querySelectorAll('[data-mode]')];
+  let current = document.getElementById('all');
+  let switchNumber = 0;
+  function show(name, time, playing) {
+    const target = document.getElementById(name);
+    const ticket = ++switchNumber;
+    current.pause();
+    current.hidden = true;
+    current = target;
+    target.hidden = false;
+    buttons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === name)));
+    function seek() {
+      if (ticket !== switchNumber) return;
+      target.currentTime = time % target.duration;
+      if (playing) target.play().catch(() => {});
+    }
+    if (target.readyState >= 1) seek();
+    else target.addEventListener('loadedmetadata', seek, {once:true});
+  }
+  buttons.forEach(b => b.addEventListener('click', () => {
+    if (current.id !== b.dataset.mode) show(b.dataset.mode, current.currentTime, !current.paused);
+  }));
+  document.getElementById('seek-blink').addEventListener('click', () => {
+    show(current.id === 'all' ? 'all' : 'blink', 3.5, true);
+  });
+</script></body></html>

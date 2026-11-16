@@ -61,6 +61,18 @@ python brush.py replay work\sea --width 3200 --out final.png
 
 位置和粗细都用「单位」表示，画布永远宽 1000 单位，所以同一份脚本或指令既能出小稿也能出大图。
 
+## 让一幅画动起来
+
+Python 接口支持分层位移与变形、整帧或局部逐帧作画、保留颜料配方及随机种子的笔触动画。《云渡》把三种画法放进同一个 8 秒循环。裙摆下方的倒影来自分层变形，眼睑逐帧重画，左岸暖光用原有笔毛和颜料重新落笔。例子随附独立运行所需的底画、水面遮罩和眼睑底稿。
+
+```powershell
+python brush.py animate examples/cloud_passage_animation/scene.py --out out/cloud-passage.mp4
+python brush.py animate examples/cloud_passage_animation/scene.py --layers blink --out out/blink.mp4
+python examples/cloud_passage_animation/compare.py
+```
+
+最后一条命令在 `out/云渡-三种动画测试/` 生成合成原片和离线对照页。可以在同一时间点切换四个视图。视频编码需要可从 PATH 调用、带 libx264 的 FFmpeg。运行 `python tests/check_animation.py` 可验证原笔复现、曝光帧、透明边缘及循环接缝。[动画创作指令](skill/SKILL.md#让成画动起来)
+
 ## 重画三幅例子
 
 ```powershell

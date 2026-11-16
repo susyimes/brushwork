@@ -10,6 +10,7 @@ A session is a directory that holds the whole state of a painting between calls.
     brush.py undo    <session>
     brush.py info    <session>
     brush.py replay  <session> --width 3200 --out final.png [--html process.html]
+    brush.py animate <scene.py> --out loop.mp4 [--layers water blink] [--width 800]
     brush.py media   [name]          # the painting media: oil, gouache, watercolor, pastel ...
     brush.py palette
     brush.py crop    <image> X Y W H [--zoom 2] [--out crop.png]
@@ -25,6 +26,7 @@ instructions at 3200 for the finished picture.
 import argparse
 import json
 import os
+import runpy
 import shutil
 import sys
 import time
@@ -273,6 +275,25 @@ def cmd_install_skill(a):
     return dict(path=path, project=root)
 
 
+def cmd_animate(a):
+    from .animation import Animation
+    scene = os.path.abspath(a.scene)
+    sys.path.insert(0, os.path.dirname(scene))
+    try:
+        source = runpy.run_path(scene)
+        if not callable(source.get('build')):
+            raise ValueError('An animation scene must define build() returning an Animation')
+        loop = source['build']()
+        if not isinstance(loop, Animation):
+            raise ValueError('build() must return a brushwork.Animation')
+        report = dict(frames=loop.count, fps=loop.fps, seconds=loop.count/loop.fps, layers=list(loop.layers))
+        if not a.list_layers:
+            report['out'] = str(loop.write_mp4(a.out, layers=a.layers, width=a.width).resolve())
+        return report
+    finally:
+        sys.path.remove(os.path.dirname(scene))
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog='brush.py', description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -316,6 +337,13 @@ def main(argv=None):
     p.add_argument('--frame-width', type=int, default=1200, help='width of the replay page\'s pictures')
     p.add_argument('--title', default=None, help='title shown on the replay page')
     p.set_defaults(fn=cmd_replay)
+    p = sub.add_parser('animate', help='render a painted animation scene')
+    p.add_argument('scene', help='Python scene with a build() function')
+    p.add_argument('--out', default='out/animation.mp4')
+    p.add_argument('--layers', nargs='+', help='include these named layers in their original stack order')
+    p.add_argument('--width', type=int, help='output width in pixels')
+    p.add_argument('--list-layers', action='store_true', help='describe the scene without rendering video')
+    p.set_defaults(fn=cmd_animate)
     p = sub.add_parser('media', help='list the painting media, or show one in full')
     p.add_argument('name', nargs='?', default=None)
     p.set_defaults(fn=cmd_media)

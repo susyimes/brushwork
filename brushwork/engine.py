@@ -709,6 +709,7 @@ class Canvas:
             self.grain = value_noise(W, H, max(1.5, support.get('grain', 4.0) * 0.5), rng)
         self.pitch = pitch
         self.tooth = None
+        self.stroke_tape = None
         self.update_tooth()
         self.recorder = None                     # replay.Recorder: sees every batch painted, changes nothing
         self.n_strokes = 0
@@ -725,6 +726,8 @@ class Canvas:
         t = 0.18 + (0.62 * self.weave + 0.30 * (self.grain - 0.5)) * (0.35 + 0.65 * hide) \
             + 0.30 * (1 - hide) + 0.45 * hp
         self.tooth = np.clip(t, 0, 1).astype(np.float32)
+        if self.stroke_tape is not None:
+            self.stroke_tape.tooth()
 
     def paint(self, strokes, order=None, shuffle=True):
         if len(strokes) == 0:
@@ -734,19 +737,33 @@ class Canvas:
         if order is None:
             order = self.rng.permutation(n) if shuffle else np.arange(n)
         seeds = self.rng.integers(1, 2 ** 31 - 1, n).astype(np.int64)
+        self.deposit(pts, off, sp, ci, cw, np.asarray(order, np.int64), seeds)
+
+    def deposit(self, pts, off, sp, ci, cw, order, seeds):
+        """Apply an already loaded batch in its physical order, with its original bristle seeds."""
+        n = len(off) - 1
         npix, ntrail = paint_strokes(self.col, self.sca, self.wet, self.hgt, self.thk,
                                      self.iri, self.ifd, self.stamp, self.tooth,
                                      pts, off, sp, seeds, ci, cw, C.PIG_K, C.PIG_S,
-                                     np.asarray(order, np.int64), self._stamp_base)
+                                     order, self._stamp_base)
         self._stamp_base += n + 1
         self.n_strokes += n
         self.n_trails += int(ntrail)
         self.n_pix += int(npix)
         if self.recorder is not None:
             self.recorder.strokes(pts, off, sp, order)
+        if self.stroke_tape is not None:
+            self.stroke_tape.batch(pts, off, sp, ci, cw, order, seeds)
 
     def dry(self, amount=1.0):
         self.wet *= (1.0 - amount)
+        if self.stroke_tape is not None:
+            self.stroke_tape.dry(amount)
+
+    def rewet(self, mask, amount):
+        self.wet[mask] = np.maximum(self.wet[mask], amount)
+        if self.stroke_tape is not None:
+            self.stroke_tape.rewet(mask, amount)
 
     def relief(self, relief=1.0, weave_amp=0.5, weave_hide=0.7, blur=0.6):
         Ht = self.hgt * relief + self.weave * weave_amp * np.exp(-self.thk * weave_hide)

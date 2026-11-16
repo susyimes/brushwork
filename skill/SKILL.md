@@ -1,7 +1,7 @@
 ---
 name: brushwork-painting
-description: "用 Python 模拟的真实画笔和画材作画（brushwork）：油画、丙烯、水粉、水彩、色粉、炭笔、水墨；自己构底稿、铺色、细化、点高光，一笔一笔画出成品。"
-version: 1.1.0
+description: "用 brushwork 的 Python 画笔画油画、丙烯、水粉、水彩、色粉、炭笔和水墨。让画面动起来时，可移动分层、逐帧重画或沿新路径重落原有笔触。"
+version: 1.2.0
 platforms: [windows, linux]
 metadata:
   hermes:
@@ -218,6 +218,32 @@ dict(path=[[x, y], ...],      # 两个点是一个点触或一段直线
 | `mend` | `false` 表示纸色透出就是要的效果，不补针孔 |
 
 笔触参数都可以写进 `all`、`styles`、`scale`：`opacity` `thick` `dry`（多早在纸纹上碎开） `pickup`（带起湿颜料） `unmix`（笔上颜色不匀） `furrow` `ridge` `blob`（起伏） `taper` `skip` `wobble` `ragged`（手的稳定程度） `mult`（0 不透明，1 只会把下面变深的透明罩染）。完整说明在 `brushwork/media.py` 开头。
+
+## 让成画动起来
+
+写一个带 `build()` 的 Python 场景，返回 `Animation(底画, seconds=8, fps=30)`。按从远到近的顺序用 `add(名字, 图层)` 叠上动作。底画使用本项目画出的 RGB 图，图层也可带透明通道。用下面的三条创作指令选择画法，一幅画可以同时使用三种。
+
+| 画法 | 可以直接给画师的指令 | Python 接口 |
+| --- | --- | --- |
+| 1 分层 | 先画完整的水面，再画前景人物。固定裙摆接触线，让贴着裙边的倒影轻颤，下方波带逐渐横向错开。 | `PaintedLayer(image, origin=..., warp=..., clip=...)` |
+| 2 逐帧重画 | 单独重画双眼。上眼睑盖过高光，闭合略快，睁开略慢。每张从同一底色和种子起笔。 | `RepaintLayer(factory, draw, origin=..., hold=1, active=...)` |
+| 3 笔触运动 | 逐笔画出左侧暖光，记录颜料、路径和笔毛种子。让同一道波峰上的几笔先后亮起，波峰过去就淡去。 | `with st.capture_strokes(seed=...) as tape`，然后用 `StrokeLayer(factory, tape, motion, over=True)` |
+
+**分层。** 把会露出的背景补画完整。带透明边缘的云或发梢可用 `origin(frame)` 位移。`warp(frame,x,y)` 返回到原图取样的偏移量，单位是本层像素。正的水平偏移会取到右边的颜色。`clip` 是固定在目标图层位置的遮罩，可用它保护人物轮廓。
+
+**逐帧。** `factory()` 返回全新的 `Studio`，也可以在这里用 `Studio.load(...)` 恢复画好的底层。`draw(st, frame)` 重新下笔，默认输出这张画布，也可以返回自己的 RGB(A) 小画。画布取整幅尺寸即可从头重画整帧。局部动作按需要裁小，`hold=2` 让每张画占两帧，`active(frame)` 指定动作时间。把每个独立动作的种子固定，顺序播放和拖动时间轴应得到同一张画。
+
+**逐笔。** 在动笔前开始捕获，实际落笔的路径、宽度、鬃毛种子、颜料配方、笔触参数、顺序和干湿操作都会进入记录。`motion(batch, frame)` 可用 `batch.ids` 认出同一笔，用 `batch.translate(dx,dy)` 平移，直接改 `batch.points` 弯曲路径，或改 `batch.parameter('opacity')[:]` 控制强度。笔触层每帧恢复同一张物理底画。用 `over=True` 把油彩带来的颜色和笔脊变化叠到正在运动的下层。用 `tape.save(path)` 和 `StrokeTape.load(path)` 保存并读回笔触。单独保存或重建同尺寸底画，便可复现原来的湿画混色。
+
+`frame.index` 从零开始，`frame.seconds` 是秒，`frame.phase` 是一个循环内从 0 到 1 之前的进度。波形可用 `2 * pi * frame.phase`。检查看第零帧、第 239 帧及回绕后的第零帧，两端之间应只隔一次正常运动。
+
+```powershell
+python brush.py animate examples/cloud_passage_animation/scene.py --list-layers
+python brush.py animate examples/cloud_passage_animation/scene.py --layers glints --out out/glints.mp4
+python examples/cloud_passage_animation/compare.py
+```
+
+最后一条命令生成《云渡》的合成 MP4 和可切换三种画法的离线对照页。导出 MP4 使用系统 PATH 上带 libx264 的 FFmpeg。
 
 ## 回放作画过程
 

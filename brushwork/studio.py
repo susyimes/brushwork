@@ -730,7 +730,7 @@ class Studio:
         m = self.rmask(regions)
         if rewet > 0:
             full = cv2.resize(m.astype(np.uint8), (self.W, self.H), interpolation=cv2.INTER_NEAREST) > 0
-            self.cv.wet[full] = np.maximum(self.cv.wet[full], rewet)
+            self.cv.rewet(full, rewet)
         n = self.fill('soften', m, brush, length, cover=cover, style='blend', edge_tol=0.05, use_region=True)
         if dry:
             self.stage('softening')
@@ -898,6 +898,11 @@ class Studio:
         return _imwrite(path, self.render(lit=lit), quality=95)
 
     # ------------------------------------------------------------------ watching it being painted
+    def capture_strokes(self, seed=None):
+        """Context manager recording a physically replayable StrokeTape; optional independent RNGs."""
+        from .strokes import capture_strokes
+        return capture_strokes(self, seed)
+
     def record(self, frame_width=1200, quality=85):
         """From now on keep every stroke, and the canvas at the end of every stage, so that
         save_replay() can write a web page that plays the painting back.  Recording only
