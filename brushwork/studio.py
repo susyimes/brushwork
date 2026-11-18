@@ -20,6 +20,7 @@ import numpy as np
 
 from . import color as C
 from . import media as MEDIA
+from .drawing import Drawing
 from .engine import (_COLS, DEFAULTS, NPAR, P_FILM, P_IRI, Canvas, Strokes, make_params,
                      trace_paths, value_noise)
 from .geom import arclen, catmull, ellipse_pts, normals, resample, tangents
@@ -90,7 +91,8 @@ def _imwrite(path, rgb, quality=92):
     """Save an RGB uint8 image; works with non-ASCII paths."""
     ext = os.path.splitext(path)[1].lower() or '.png'
     args = [cv2.IMWRITE_JPEG_QUALITY, quality] if ext in ('.jpg', '.jpeg') else []
-    ok, buf = cv2.imencode(ext, np.ascontiguousarray(rgb[:, :, ::-1]), args)
+    conversion = cv2.COLOR_RGBA2BGRA if rgb.shape[2] == 4 else cv2.COLOR_RGB2BGR
+    ok, buf = cv2.imencode(ext, cv2.cvtColor(rgb, conversion), args)
     if not ok:
         raise IOError('could not encode ' + path)
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
@@ -171,6 +173,32 @@ class Studio:
     # ------------------------------------------------------------------ utilities
     def say(self, msg):
         self.log('[%6.1fs] %s' % (time.time() - self.t0, msg))
+
+    def set_drawing(self, source):
+        """Replace the underdrawing from a Drawing or its JSON data for future painting passes."""
+        drawing = source if isinstance(source, Drawing) else Drawing(**source)
+        self.sk = drawing.render(self.GW, self.GH)
+        self._lab = self._lab_ver = None
+        self._blur.clear()
+
+    def edit_drawing(self, id, action, **args):
+        """Edit a source object's geometry/visibility, then rebuild the underdrawing.
+
+        Actions: move(dx, dy) in canvas units, replace(ops), hide, show, add(ops).
+        The current painted canvas is kept; later painting passes use the revised guide.
+        """
+        source = getattr(self.sk, 'drawing_source', None)
+        if source is None:
+            raise ValueError('no current editable underdrawing; use set_drawing(source). '
+                             'Direct sketch edits invalidate the retained source.')
+        drawing = Drawing(**source)
+        if action in ('show', 'hide'):
+            drawing.set_visible(id, action == 'show', **args)
+        elif action in ('move', 'replace', 'add'):
+            getattr(drawing, action)(id, **args)
+        else:
+            raise ValueError('unknown drawing edit %r; use add, move, replace, hide or show' % action)
+        self.set_drawing(drawing)
 
     def gidx(self, pts_px):
         g = (np.asarray(pts_px) * self.gs).astype(np.int32)
@@ -331,7 +359,7 @@ class Studio:
         self.cv.paint(st)
         return N
 
-    def lines(self, items, style='line', shuffle=False):
+    def lines(self, items, style='line', shuffle=False, clip=None):
         """Explicit strokes.  item: dict(pl=(n,2) units, r=units, rgb=linear | rec=(idx,w), ...)."""
         if not items:
             return 0
@@ -386,8 +414,7 @@ class Studio:
                 idx[i], w[i] = li[wh], lw[wh]
         stx = Strokes()
         stx.add(pls, None, sp, idx, w)
-        self.cv.paint(stx, shuffle=shuffle)
-        return n
+        return self.cv.paint(stx, shuffle=shuffle, clip=clip)
 
     def runs(self, pl, regions, bridge=2, min_len=0.0):
         """Split a polyline (units) into the runs that lie on the given regions.  Gaps of a
@@ -477,15 +504,34 @@ class Studio:
             regions = [regions]
         return [int(r) if isinstance(r, (int, np.integer)) else sk.regions[r]['id'] for r in regions]
 
-    def rmask(self, regions=None):
-        """Bool mask (guide resolution) of the given regions.  Also takes a mask array, or the
-        name of a mask stored in the sketch."""
-        if isinstance(regions, np.ndarray):
-            return regions if regions.dtype == bool else regions > 0.5
-        if isinstance(regions, str) and regions not in getattr(self.sk, 'regions', {}) \
-                and regions in getattr(self.sk, 'masks', {}):
-            return self.sk.masks[regions] > 0.5
-        return np.isin(self.sk.region, self.rids(regions))
+    def rmask(self, regions=None, *, canvas=False):
+        """Resolve regions, named masks, {'object': id} or NumPy masks at guide or painted resolution.
+        Each operand of a union is sampled at the requested size before merging it."""
+        shape = (self.H, self.W) if canvas else (self.GH, self.GW)
+        names = getattr(self.sk, 'masks', {})
+        if isinstance(regions, (list, tuple)):
+            if any(isinstance(ref, (list, tuple)) for ref in regions):
+                raise ValueError('JSON selections use region names or named masks; for pixel masks pass a NumPy array in Python')
+            if any(isinstance(ref, (np.ndarray, dict)) or isinstance(ref, str) and ref in names for ref in regions):
+                union = np.zeros(shape, bool)
+                for ref in regions:
+                    union |= self.rmask(ref, canvas=canvas)
+                return union
+        if isinstance(regions, dict):
+            if set(regions) != {'object'} or regions['object'] not in getattr(self.sk, 'object_ids', ()):
+                raise KeyError('Unknown object selection: %r' % regions)
+            mask = self.sk.object_mask(regions['object'])
+        elif isinstance(regions, np.ndarray):
+            mask = regions if regions.dtype == bool else regions > 0.5
+        elif isinstance(regions, str) and regions not in getattr(self.sk, 'regions', {}) and regions in names:
+            mask = names[regions] > 0.5
+        else:
+            mask = np.isin(self.sk.region, self.rids(regions))
+        if mask.shape == shape:
+            return mask
+        if mask.shape not in ((self.H, self.W), (self.GH, self.GW)):
+            raise ValueError('Brush selection must match the guide or canvas size')
+        return cv2.resize(mask.astype(np.uint8), shape[::-1], interpolation=cv2.INTER_NEAREST).astype(bool)
 
     def _is_black(self, rid):
         return bool(hasattr(self.sk, 'props') and self.sk.props(rid).get('black'))
@@ -748,7 +794,11 @@ class Studio:
           smooth   true to round the path into a curve through its points
           sheen    0..1 interference medium, with hue 'magenta' (see SHEEN_HUES) or film nm
           plus any style knob to override: opacity, thick, taper, dry, pickup, unmix ...
-        on: restrict every stroke to these regions (it is cut where it leaves them)."""
+        on: clip the entire brush footprint to a region, named mask, or their union. Python
+        also accepts guide/canvas-sized NumPy masks in the union. JSON uses region/mask names
+        so instructions can replay at other resolutions. Clipping protects the paint fields; relief lighting
+        may cast a shadow across that boundary. dry=True finishes a stage and dries the whole
+        canvas. With a selection, returns the number of strokes that deposited paint."""
         norm = []
         for it in items:
             d = {k: v for k, v in it.items() if k in _COLS}
@@ -770,9 +820,8 @@ class Studio:
                 d['iri'] = float(it['sheen'])
                 d['film'] = float(it['film']) if 'film' in it else C.film_for(it.get('hue', 'purple'))
             norm.append(d)
-        if on is not None:
-            norm = self.on_regions(norm, self.rids(on))
-        n = self.lines(norm, shuffle=shuffle)
+        clip = self.rmask(on, canvas=True) if on is not None else None
+        n = self.lines(norm, shuffle=shuffle, clip=clip)
         if dry:
             self.stage('strokes')
         return n
@@ -849,6 +898,60 @@ class Studio:
         self.mend()
 
     # ------------------------------------------------------------------ looking
+    def _sketch_image(self):
+        image = (C.lin_to_srgb(np.clip(self.sk.target, 0, 1)) * 255 + 0.5).astype(np.uint8)
+        return cv2.resize(image, (self.W, self.H), interpolation=cv2.INTER_LINEAR)
+
+    def inspect(self, region=None, *, object_id=None, before=None, what='canvas', padding=16, path=None, lit=True):
+        """Compare this state with a Studio or RGB snapshot. Padding and output boxes use pixels.
+
+        A region, named mask or retained object ID focuses the detail. When comparing two studios, use
+        both footprints so a moved or hidden feature's old location stays in the crop.
+        With no before state, show the current canvas and a magnified detail.
+        """
+        from .inspection import inspect_edit
+        if region is not None and object_id is not None:
+            raise ValueError('Choose a region or an object ID to inspect')
+
+        def pixels(studio):
+            if what == 'canvas':
+                return studio.render(lit=lit)
+            if what == 'sketch':
+                return studio._sketch_image()
+            raise ValueError("what must be 'canvas' or 'sketch'")
+
+        after = pixels(self)
+        previous = pixels(before) if isinstance(before, Studio) else before
+        mask = None
+        if region is not None or object_id is not None:
+            studios = (self, before) if isinstance(before, Studio) else (self,)
+            for studio in studios:
+                ids = getattr(studio.sk, 'object_ids', ())
+                from_object = object_id is not None
+                if object_id is not None:
+                    if object_id not in ids:
+                        continue
+                    m = studio.sk.object_mask(object_id)
+                else:
+                    try:
+                        m = studio.rmask(region, canvas=True)
+                    except KeyError:
+                        if not isinstance(region, str) or region not in ids:
+                            continue
+                        m = studio.sk.object_mask(region)
+                        from_object = True
+                if from_object and what == 'sketch' and m.shape != (studio.H, studio.W):
+                    # A single guide pixel contributes to several linearly interpolated preview pixels.
+                    m = cv2.resize(m.astype(np.float32), (studio.W, studio.H), interpolation=cv2.INTER_LINEAR) > 0
+                else:
+                    m = cv2.resize(m.astype(np.uint8), (studio.W, studio.H), interpolation=cv2.INTER_NEAREST)
+                if m.shape != after.shape[:2]:
+                    raise ValueError('Comparison studios must have the same canvas size')
+                mask = m if mask is None else mask | m
+            if mask is None:
+                raise KeyError('Unknown inspection focus: %r' % (object_id if object_id is not None else region,))
+        return inspect_edit(after if previous is None else previous, after, mask=mask, padding=padding, path=path)
+
     def look(self, path=None, width=1200, crop=None, zoom=1.0, lit=True, what='canvas', max_side=2400):
         """Save a view to look at, and return its path.
 
@@ -861,8 +964,7 @@ class Studio:
         if what in ('canvas', 'both'):
             views.append(self.render(lit=lit))
         if what in ('sketch', 'both'):
-            sk8 = (C.lin_to_srgb(np.clip(self.sk.target, 0, 1)) * 255 + 0.5).astype(np.uint8)
-            views.append(cv2.resize(sk8, (self.W, self.H), interpolation=cv2.INTER_LINEAR))
+            views.append(self._sketch_image())
         if what == 'error':
             e = np.clip(self.error_map(1.0) / 0.25, 0, 1)
             heat = cv2.applyColorMap((e * 255).astype(np.uint8), cv2.COLORMAP_INFERNO)[:, :, ::-1]

@@ -1,4 +1,7 @@
 [
+  {"op": "set_drawing", "source": {"objects": [{"id": "underlay", "ops": [{"op": "rect",
+    "x": 200, "y": 400, "w": 80, "h": 40, "color": "#988572"}]}]}},
+  {"op": "edit_drawing", "id": "underlay", "action": "move", "dx": 10, "dy": 0},
   {"op": "background", "color": "#0c0b12", "region": "night", "detail": 5, "black": true,
    "direction": {"swirl": [500, 500], "pitch": 15}},
   {"op": "sheen_field", "mask": "night", "amount": 0.7, "hue": "magenta", "noise": 120},

@@ -9,6 +9,8 @@ A session is a directory that holds the whole state of a painting between calls.
     brush.py look    <session> [--out view.jpg] [--crop X Y W H] [--zoom 2] [--what canvas|sketch|both|error] [--unlit]
     brush.py undo    <session>
     brush.py info    <session>
+    brush.py inspect <session> --region eye --out detail.png
+    brush.py edit    <document.npz> [ops.json | -] [--base image.png] [--focus iris --preview detail.png]
     brush.py replay  <session> --width 3200 --out final.png [--html process.html]
     brush.py animate <scene.py> --out loop.mp4 [--layers water blink] [--width 800]
     brush.py media   [name]          # the painting media: oil, gouache, watercolor, pastel ...
@@ -36,12 +38,13 @@ import numpy as np
 
 from . import color as C
 from . import media as MEDIA
+from .edit_cli import add_commands, read_ops
 from .studio import PASSES, SIZES, STYLE, Studio, _imwrite
 
 SKETCH_OPS = ('background', 'polygon', 'spline', 'ellipse', 'rect', 'ribbon', 'tint', 'form_shadow', 'form_light',
               'cast_shadow', 'line', 'direction', 'detail', 'sheen_field', 'region_props')
 STUDIO_OPS = ('tone_ground', 'underpaint', 'block_in', 'cut_in', 'mend', 'refine', 'soften', 'strokes', 'dabs',
-              'glaze', 'sheen', 'dry', 'paint', 'look')
+              'glaze', 'sheen', 'dry', 'paint', 'look', 'set_drawing', 'edit_drawing')
 STATE_FILES = ('meta.json', 'canvas.npz', 'sketch.npz')
 UNDO_DEPTH = 3
 
@@ -72,7 +75,7 @@ def run_ops(st, ops, skip=()):
         except KeyError as e:
             raise ValueError('operation #%d (%s): %s' % (i, name, e.args[0] if e.args else e))
         res = dict(op=name)
-        if st.cv.n_strokes != before:
+        if st.cv.n_strokes != before or name in ('strokes', 'dabs'):
             res['strokes'] = int(st.cv.n_strokes - before)
         if isinstance(r, str):
             res['path'] = r
@@ -134,10 +137,7 @@ def cmd_new(a):
 
 
 def cmd_do(a):
-    raw = sys.stdin.read() if a.ops == '-' else open(a.ops, encoding='utf-8-sig').read()
-    ops = json.loads(raw)
-    if isinstance(ops, dict):
-        ops = [ops]
+    ops = read_ops(a.ops)
     st = Studio.load(a.session, log=_quiet)
     st.view_dir = os.path.join(a.session, 'views')
     t0 = time.time()
@@ -189,11 +189,13 @@ def cmd_info(a):
     sk = json.loads(str(z['meta']))
     batches = _read_ops_log(a.session)
     undo = sum(os.path.isdir(os.path.join(a.session, 'undo', str(k))) for k in range(1, UNDO_DEPTH + 1))
+    drawing = sk.get('drawing') or {}
     return dict(session=os.path.abspath(a.session), width=meta['width'], height=meta['height'],
                 units=[1000, round(1000.0 * meta['height'] / meta['width'], 1)], seed=meta['seed'],
                 medium=MEDIA.load(meta.get('medium', 'oil')).name, palette=meta.get('palette', 'classic'),
                 regions=sorted(sk['regions'], key=lambda n: sk['regions'][n]['id']),
                 masks=[k[5:] for k in z.files if k.startswith('mask:')],
+                objects=[obj['id'] for obj in drawing.get('objects', ())],
                 batches=len(batches), operations=sum(len(b) for b in batches),
                 brushstrokes=meta['n_strokes'], bristle_trails=meta['n_trails'], undo_available=undo)
 
@@ -298,6 +300,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog='brush.py', description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest='cmd', required=True)
+    add_commands(sub)
     p = sub.add_parser('new', help='start a session')
     p.add_argument('session')
     p.add_argument('--width', type=int, default=1200)

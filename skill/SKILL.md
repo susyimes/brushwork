@@ -1,7 +1,7 @@
 ---
 name: brushwork-painting
-description: "用 brushwork 的 Python 画笔画油画、丙烯、水粉、水彩、色粉、炭笔和水墨。让画面动起来时，可移动分层、逐帧重画或沿新路径重落原有笔触。"
-version: 1.2.0
+description: "用 brushwork 的 Python 画笔作画，按对象修改底稿或已有画作，检查局部前后对照。动画可用分层、逐帧重画或笔触运动。"
+version: 1.3.0
 platforms: [windows, linux]
 metadata:
   hermes:
@@ -11,13 +11,13 @@ metadata:
 
 # brushwork：用模拟的真实画笔和画材作画
 
-一个画布加一套画家的动作。你决定画什么、每一笔怎么走；它负责让颜料像颜料：鬃毛带料、飞白、湿画带色、厚涂起伏、布纹或纸纹，和最后的打光。画材可以选：油画（默认）、丙烯、水粉、水彩、色粉、炭笔、水墨，也可以自己写一个。不读入图片，不调用任何生图模型。
+你决定画什么、每一笔怎么走，工具模拟鬃毛、飞白、湿画混色、厚涂、布纹或纸纹和最后的打光。画材可选油画（默认）、丙烯、水粉、水彩、色粉、炭笔、水墨。可用形状从零搭底稿，也可读取已有画作，用具名对象修改局部。
 
 ## 何时使用
 
 用户要求「用 Python 模拟真实画笔作画」「Painted fully in Python」，要用某种真实画材（水粉、水彩、色粉、炭笔、水墨……）一笔一笔画，或点名 brushwork、这套画笔工具时使用。
 
-不用于：照着现成图片转绘（工具不读图）、需要文字排版的画面、普通的 AI 生图请求（那走生图 skill）。
+用户要给已有画作改眼神、移动局部对象或比较修改前后时，也可使用这套工具。普通 AI 生图请求走生图 skill。
 
 ## 位置与两种用法
 
@@ -141,9 +141,34 @@ dict(path=[[x, y], ...],      # 两个点是一个点触或一段直线
      thick=2.4, opacity=0.9, taper=0.9)   # 可选：覆盖 style 的任何旋钮
 ```
 
-`on=['区域', ...]` 把这批笔限制在这些区域内，出界处自动截断。
+`on='眼睛'` 或 `on=['左眼','右眼']` 按实际笔宽逐像素裁切颜料，可传区域名、具名遮罩或 Python 布尔遮罩。一条直线即使两个端点都在选区外，穿过选区的部分仍可着色。用 `lit=False` 或 CLI 的 `--unlit` 核对实际颜料边界。打光时，选区内的厚涂可能在邻近像素投下阴影。显式 `dry=True` 仍会干燥整幅画。
+
+可编辑底稿上的笔触还可用 `on={"object":"left_iris"}` 选中一个对象的可见影响范围。即使左右虹膜使用同一个绘画区域，也可以只画其中一个。
 
 区域属性：`style` 画法；`vary` 色彩活泼程度，0 平整、0.4 默认、1 是印象派式的碎色（只是每一笔在底稿颜色附近抖一点，见「经验」）；`brush` 最大笔半径；`length` 笔画长度范围；`black=True` 把这个区域当成「五彩斑斓的黑」，用互补色调出的黑加珠光来画。
+
+## 按对象修改与局部预览
+
+**底稿用画宽 1000 单位。** 将底稿指令按对象分组，按遮挡顺序放入 `Drawing`。每个对象有唯一 ID，可包含多条操作，区域名仍指绘画区域。`set_drawing` 接受 `Drawing` 或其 `to_dict()` 形式。以下示例先留一份修改前的 Studio，用同一份源在当前底稿上移动虹膜。
+
+```python
+from brushwork import Drawing, Studio
+
+source = Drawing()
+source.add('iris', [{'op': 'ellipse', 'center': [500, 350], 'rx': 24, 'ry': 30,
+                     'color': '#72532c', 'region': 'eye'}])
+previous = Studio(400, 300, sketch=source)
+st = Studio(400, 300)
+st.set_drawing(source)
+st.edit_drawing('iris', 'move', dx=-10, dy=2)
+report = st.inspect(object_id='iris', before=previous, what='sketch', path='iris-check.png')
+```
+
+`edit_drawing` 还支持 `replace`（传 `ops`）、`hide`、`show` 和 `add`。修改会按原顺序重建底稿，下一次铺色或细化使用新底稿。会话存档保留对象源。直接用 `st.sk` 改写这份底稿后，继续按 ID 修改须重新载入对象源。CLI 用 `do` 提交 `set_drawing` 或 `edit_drawing`，再用 `python brush.py inspect <会话> --object iris --what sketch --out iris-check.png` 与前一批操作比较。查看绘画区域时改用 `--region eye`。
+
+**成品用原图像素。** `ObjectEditor(base)` 接受背景图片路径或 RGB(A) 数组。`add(id, tile, xy=(x,y), clip=mask, clip_xy=(cx,cy))` 把前景注册为对象。移动对象时 `clip` 固定在画布上，可用于保护眼睑。`move(id,dx,dy)`、`replace(id,tile)`、`set_visible(id,False)` 分别移动、替换和隐藏对象。对象移开后会露出下层，处理扁平图时须先准备这部分底色。`save` 和 `ObjectEditor.load` 用同一份 NPZ 档案恢复底图、对象顺序、位置和遮罩。
+
+用 `from brushwork import inspect_edit` 导入预览接口。`report = inspect_edit(before, after, mask=mask, path='check.png')` 比较两张同尺寸的 8 位 RGB(A) 图，也可用 `bbox=(左,上,右,下)` 选定局部，右、下边界不包含在框内。打开对照图检查全貌和局部，读 `report.metadata` 中的 `changed_bbox`、`changed_pixels` 和 `changed_outside_selection`。CLI 的 `edit <档案> - --preview check.png` 从标准输入接收一批对象操作，需要聚焦某个对象时加 `--focus <ID>`。在 `<工程目录>/README.md` 的「实际改一次眼神」一节可以直接复现《星落之前》的修改。
 
 ## 画笔粗细
 

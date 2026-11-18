@@ -54,13 +54,24 @@ class StrokeTape:
         self.size = (width, height)
         self.count = 0
         self._events = []
+        self._clip_ids = {}  # immutable packed pixel bits -> index in insertion order
 
-    def batch(self, *values):
+    def batch(self, *values, clip=None):
+        packed = None
+        if clip is not None:
+            clip = np.asarray(clip, dtype=bool)
+            if clip.shape != self.size[::-1]:
+                raise ValueError('Paint selection must match the recorded canvas')
+            packed = np.packbits(clip).tobytes()
+        self._record_batch(values, packed)
+
+    def _record_batch(self, values, packed):
         arrays = tuple(np.array(a, dtype=t, copy=True, order='C') for a, t in zip(values, _DTYPES))
         _validate(arrays)
         for a in arrays:
             a.flags.writeable = False
-        self._events.append(('paint', arrays))
+        clip_id = None if packed is None else self._clip_ids.setdefault(packed, len(self._clip_ids))
+        self._events.append(('paint', (arrays, clip_id)))
         self.count += len(arrays[-1])
 
     def dry(self, amount):
@@ -83,6 +94,8 @@ class StrokeTape:
         if cv.stroke_tape is self:
             raise ValueError('A recording cannot replay into itself')
         first = 0
+        packed_clips = list(self._clip_ids)
+        last_id, last_clip = None, None
         for name, data in self._events:
             if name == 'dry':
                 cv.dry(data)
@@ -91,31 +104,39 @@ class StrokeTape:
             elif name == 'rewet':
                 cv.rewet(*data)
             else:
-                if motion is None:
-                    cv.deposit(*data)
-                else:
-                    pts, off, sp, ci, cw, order, seeds = data
+                arrays, clip_id = data
+                if clip_id is not None and clip_id != last_id:
+                    bits = np.frombuffer(packed_clips[clip_id], dtype=np.uint8)
+                    last_clip = np.unpackbits(bits, count=cv.W * cv.H).reshape(cv.H, cv.W).view(bool)
+                    last_id = clip_id
+                if motion is not None:
+                    pts, off, sp, ci, cw, order, seeds = arrays
                     pose = StrokeBatch((pts.copy(), off, sp.copy(), ci.copy(), cw.copy(), order, seeds), first)
                     motion(pose, frame)
                     # The kernel uses unchecked integer indexing. Validate edits before depositing.
-                    posed = (pose.points, off, pose.settings, pose.tubes, pose.weights, order, seeds)
-                    _validate(posed)
-                    cv.deposit(*posed)
-                first += len(data[-1])
+                    arrays = (pose.points, off, pose.settings, pose.tubes, pose.weights, order, seeds)
+                    _validate(arrays)
+                cv.deposit(*arrays, clip=last_clip if clip_id is not None else None)
+                first += len(arrays[-1])
 
     def save(self, path):
         """Write a versioned NPZ with numeric arrays; the underpainting is supplied at replay."""
-        arrays, events = {}, []
+        arrays = {f'clip_{i}': np.frombuffer(bits, dtype=np.uint8) for bits, i in self._clip_ids.items()}
+        events = []
         for i, (name, data) in enumerate(self._events):
             if name == 'paint':
-                arrays.update({f'{i}_{key}': a for key, a in zip(_KEYS, data)})
-                events.append([name])
+                batch, clip_id = data
+                arrays.update({f'{i}_{key}': a for key, a in zip(_KEYS, batch)})
+                events.append([name] if clip_id is None else ['clipped_paint', clip_id])
             elif name == 'rewet':
                 arrays[f'{i}_mask'] = data[0]
                 events.append([name, data[1]])
             else:
                 events.append([name, data])
-        arrays['meta'] = json.dumps(dict(version=1, size=self.size, events=events))
+        meta = dict(version=1, size=self.size, events=events)
+        if self._clip_ids:
+            meta.update(version=3, clip_count=len(self._clip_ids))
+        arrays['meta'] = json.dumps(meta)
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as fp:
@@ -131,13 +152,29 @@ class StrokeTape:
     def load(cls, path):
         with np.load(path, allow_pickle=False) as file:
             meta = json.loads(str(file['meta']))
-            if meta['version'] != 1:
+            if meta['version'] not in (1, 2, 3):
                 raise ValueError('Unsupported stroke recording version')
             tape = cls(*meta['size'])
+            packed_clips = []
+            if meta['version'] == 3:
+                nbytes = (tape.size[0] * tape.size[1] + 7) // 8
+                for i in range(meta['clip_count']):
+                    bits = file[f'clip_{i}']
+                    if bits.dtype != np.uint8 or bits.shape != (nbytes,):
+                        raise ValueError('Invalid packed paint selection')
+                    packed_clips.append(bits.tobytes())
             for i, event in enumerate(meta['events']):
                 name = event[0]
-                if name == 'paint':
-                    tape.batch(*(file[f'{i}_{key}'] for key in _KEYS))
+                if name in ('paint', 'clipped_paint'):
+                    values = tuple(file[f'{i}_{key}'] for key in _KEYS)
+                    if name == 'clipped_paint' and meta['version'] == 3:
+                        clip_id = event[1]
+                        if not isinstance(clip_id, int) or not 0 <= clip_id < len(packed_clips):
+                            raise ValueError('Unknown recorded paint selection')
+                        tape._record_batch(values, packed_clips[clip_id])
+                    else:
+                        clip = file[f'{i}_clip'] if name == 'clipped_paint' else None
+                        tape.batch(*values, clip=clip)
                 elif name == 'rewet':
                     tape.rewet(file[f'{i}_mask'], event[1])
                 elif name == 'dry':

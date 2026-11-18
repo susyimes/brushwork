@@ -21,6 +21,7 @@ call sk.touch() afterwards so the painter notices.
 """
 import json
 import math
+from copy import deepcopy
 from types import SimpleNamespace
 
 import cv2
@@ -58,6 +59,51 @@ class Sketch:
         self.masks = {}                              # named masks, for later reference
         self.geo = SimpleNamespace()                 # free space for your own geometry
         self.version = 0
+        self._drawing_source = None
+        self._drawing_version = None
+
+    @property
+    def drawing_source(self):
+        """Editable source, when it still describes the current raster fields."""
+        if self._drawing_version == self.version:
+            return deepcopy(self._drawing_source)
+        return None
+
+    def _attach_drawing(self, source):
+        self._drawing_source = source
+        self._drawing_version = self.version
+
+    @property
+    def object_ids(self):
+        if self._drawing_source is None or self._drawing_version != self.version:
+            return ()
+        return tuple(obj['id'] for obj in self._drawing_source['objects'])
+
+    def object_mask(self, id):
+        """Visible influence of one retained object as a guide-resolution bool mask.
+
+        Includes changes in colour, region ownership and painting fields, such
+        as a shadow derived from the object. Covered or identical pixels are
+        excluded. Rendering a copy with the object hidden leaves this sketch
+        and its random stream untouched.
+        """
+        from .drawing import Drawing
+        source = self.drawing_source
+        if source is None:
+            raise ValueError('object_mask requires a current editable underdrawing')
+        for obj in source['objects']:
+            if obj['id'] == id:
+                break
+        else:
+            raise KeyError('unknown drawing object: %r' % id)
+        if not obj['visible']:
+            return np.zeros(self.region.shape, bool)
+        obj['visible'] = False
+        hidden = Drawing(**source).render(self.GW, self.GH)
+        changed = np.any(self.target != hidden.target, axis=2)
+        for field in ('region', 'vx', 'vy', 'rmin', 'sheen', 'film'):
+            changed |= getattr(self, field) != getattr(hidden, field)
+        return changed
 
     # ------------------------------------------------------------------ bookkeeping
     def touch(self):
@@ -68,6 +114,9 @@ class Sketch:
         """Id of a named region, registering it (and updating its properties) if needed."""
         if isinstance(name, (int, np.integer)):
             return int(name)
+        changing_region = name not in self.regions or any(v is not None for v in props.values())
+        if self._drawing_version is not None and changing_region:
+            self._drawing_version = None
         if name not in self.regions:
             if len(self.regions) >= 255:
                 raise ValueError('too many regions (255)')
@@ -377,6 +426,8 @@ class Sketch:
     def save(self, path):
         meta = dict(GW=self.GW, GH=self.GH, seed=self.seed, version=self.version, regions=self.regions,
                     rng=self.rng.bit_generator.state)
+        if self._drawing_source is not None and self._drawing_version == self.version:
+            meta['drawing'] = self._drawing_source
         arrays = dict(target=self.target, region=self.region, vx=self.vx, vy=self.vy, rmin=self.rmin,
                       sheen=self.sheen, film=self.film)
         for k, v in self.masks.items():
@@ -395,5 +446,7 @@ class Sketch:
                 sk.masks[k[5:]] = z[k].astype(np.float32) / 255.0
         sk.regions = meta['regions']
         sk.version = meta['version']
+        if 'drawing' in meta:
+            sk._attach_drawing(meta['drawing'])
         sk.rng.bit_generator.state = meta['rng']
         return sk

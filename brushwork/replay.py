@@ -50,13 +50,42 @@ class Recorder:
         self.n = 0
         self.counts, self.radii, self.points = [], [], []
         self.frames = []
+        self.clip_ids = {}                       # (display x, y, cropped PNG) -> id
+        self.clip_ranges = []                    # [first stroke, exclusive end, clip id]
+        self._last_clip = (None, None)            # consecutive brush batches often reuse an eye or hair mask
 
     # ------------------------------------------------------------------ while painting
-    def strokes(self, pts, off, sp, order):
+    def _clip_id(self, clip):
+        mask = np.asarray(clip, dtype=bool)
+        if mask.shape != (self.H, self.W):
+            raise ValueError('Replay selection must match the canvas dimensions')
+        bits = np.packbits(mask).tobytes()
+        if self._last_clip[0] == bits:
+            return self._last_clip[1]
+        alpha = cv2.resize(mask.astype(np.uint8) * 255, (self.fw, self.fh),
+                           interpolation=cv2.INTER_AREA)
+        x, y, w, h = cv2.boundingRect(alpha)
+        tile = np.zeros((max(1, h), max(1, w), 4), np.uint8)
+        if w and h:
+            tile[:, :, 3] = alpha[y:y + h, x:x + w]
+        ok, png = cv2.imencode('.png', tile)
+        if not ok:
+            raise ValueError('Could not encode the replay selection')
+        clip_id = self.clip_ids.setdefault((x, y, png.tobytes()), len(self.clip_ids))
+        self._last_clip = (bits, clip_id)
+        return clip_id
+
+    def strokes(self, pts, off, sp, order, clip=None):
         """Called by Canvas.paint with the batch it has just laid (pixels) and the order it used."""
-        n = len(off) - 1
+        n = len(order)
         if n <= 0:
             return
+        if clip is not None:
+            clip_id = self._clip_id(clip)
+            if self.clip_ranges and self.clip_ranges[-1][1:] == [self.n, clip_id]:
+                self.clip_ranges[-1][1] += n
+            else:
+                self.clip_ranges.append([self.n, self.n + n, clip_id])
         P = np.asarray(pts, np.float64) / self.S                     # canvas units
         lens = np.diff(off).astype(np.int64)
         R = np.asarray(sp[:, P_RADIUS], np.float64) / self.S
@@ -115,6 +144,10 @@ class Recorder:
         meta = dict(title=title, width=self.fw, height=self.fh, units=[1000, round(1000.0 * self.H / self.W, 2)],
                     strokes=int(self.n), scale=SCALE, rscale=RSCALE, info=info or {},
                     frames=[dict(name=f['name'], at=f['at']) for f in self.frames])
+        if self.clip_ranges:
+            meta['clipRanges'] = self.clip_ranges
+            meta['clips'] = [dict(x=x, y=y, src='data:image/png;base64,' + base64.b64encode(png).decode('ascii'))
+                             for x, y, png in self.clip_ids]
         frames = ['data:%s;base64,%s' % (f['mime'], base64.b64encode(f['data']).decode('ascii')) for f in self.frames]
         sk = ''
         if sketch is not None:
@@ -252,6 +285,9 @@ PAGE = r'''<!doctype html>
   cv.width = meta.width; cv.height = meta.height;
   const load = (src) => new Promise((ok, bad) => { const im = new Image(); im.onload = () => ok(im); im.onerror = bad; im.src = src; });
   const imgs = await Promise.all(frameSrc.map(load));
+  const clips = await Promise.all((meta.clips || []).map(async ({x, y, src}) => ({x, y, image: await load(src)})));
+  const clipFor = clips.length ? new Uint32Array(meta.strokes) : null;
+  for (const [from, to, id] of meta.clipRanges || []) clipFor.fill(id + 1, from, to);
   const sketch = sketchSrc ? await load(sketchSrc) : null;
   if (!sketch) $('sketch').hidden = true;
 
@@ -298,12 +334,35 @@ PAGE = r'''<!doctype html>
 
   // ---- drawing -----------------------------------------------------------------------------
   const pats = imgs.map((im) => ctx.createPattern(im, 'no-repeat'));
+  const clippedPatterns = new Map();
+  let patternStep = -1;
+  function strokePattern(step, id) {
+    if (!id) return pats[step];
+    if (patternStep !== step) {
+      clippedPatterns.clear();
+      patternStep = step;
+    }
+    if (!clippedPatterns.has(id)) {
+      const {x, y, image} = clips[id - 1];
+      const tile = document.createElement('canvas');
+      tile.width = image.width; tile.height = image.height;
+      const tileCtx = tile.getContext('2d');
+      tileCtx.drawImage(image, 0, 0);
+      tileCtx.globalCompositeOperation = 'source-in';
+      tileCtx.drawImage(imgs[step], -x, -y);
+      const pattern = ctx.createPattern(tile, 'no-repeat');
+      pattern.setTransform(new DOMMatrix().translate(x, y));
+      clippedPatterns.set(id, pattern);
+    }
+    return clippedPatterns.get(id);
+  }
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   let shown = null, shownCount = 0;            // which step is on the canvas, and how many of its strokes
 
   function strokesOf(st, from, to) {
     ctx.strokeStyle = pats[st.s];
     for (let i = st.a + from; i < st.a + to; i++) {
+      if (clipFor) ctx.strokeStyle = strokePattern(st.s, clipFor[i]);
       const p0 = start[i], p1 = start[i + 1];
       if (p1 - p0 < 1) continue;
       ctx.lineWidth = width[i];

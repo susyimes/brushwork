@@ -1,18 +1,19 @@
 # brushwork：给 agent 用的真实笔刷绘画工具
 
-用 Python 模拟真实的画笔和画材，一笔一笔地画。agent 决定画什么、怎么画；工具负责让颜料像颜料：鬃毛带料、飞白、湿画带色、厚涂起伏、布纹或纸纹，和最后的打光。画材可选油画（默认）、丙烯、水粉、水彩、色粉、炭笔、水墨，每一种都是一份配置，也可以自己写。不读入任何图片，不调用任何生图模型。
+用 Python 模拟画笔和画材。agent 决定画什么、怎么落笔，工具模拟鬃毛带料、飞白、湿画混色、厚涂起伏和表面打光。可从底稿绘制油画（默认）、丙烯、水粉、水彩、色粉、炭笔和水墨，也可打开已有画作，按对象修改局部。
 
 这个工程最初是为画《五彩斑斓的黑》写的，现在画笔和作画流程已经和那幅画分开，可以画任何题材。
 
-## 画过的三幅
+## 可运行的绘画示例
 
-仓库里不带成品图，运行例子后生成，命令见下面「重画三幅例子」。
+静物、海景和《五彩斑斓的黑》从底稿起画。《星落之前》的改眼神示例附带无损原画。
 
 | 运行后得到 | 题材 | 怎么画的 |
 | --- | --- | --- |
 | `out/astra_iridescent_black.png` | 爱式塔，3200×4000，49,317 笔 | `examples/astra_iridescent_black/`，手写底稿加专门的作画步骤 |
 | `out/still_life.png` | 柠檬与青花碗，2000×1600 | `examples/still_life.py`，约百行，只用公开接口 |
 | `replay --out` 指定的文件 | 落日海景，2000×1250 | `examples/seascape/*.json`，三十来条 JSON 指令，经命令行会话画成 |
+| `out/gaze-edit/comparison.png` | 《星落之前》，2560×1888 | 移动两个虹膜对象，将视线转向指尖，检查双眼局部和全脸的前后对比 |
 
 `examples/brush_sheet.py` 生成笔触试样 `out/brush_sheet.jpg`；人物那幅加 `--frames` 会另存八个作画阶段的过程图。
 
@@ -59,7 +60,21 @@ python brush.py undo  work\sea
 python brush.py replay work\sea --width 3200 --out final.png
 ```
 
-位置和粗细都用「单位」表示，画布永远宽 1000 单位，所以同一份脚本或指令既能出小稿也能出大图。
+底稿和画笔的坐标以画宽 1000 单位表示，同一套指令可生成小稿和大图。成品对象编辑使用原图像素。
+
+## 实际改一次眼神
+
+在工程根目录运行下面的 PowerShell 命令。第一行生成《星落之前》改看指尖的原画、成品、双眼对照图和可继续编辑的档案。接下来在副本上让视线略向右上回移。
+
+```powershell
+python examples/gaze_edit/edit.py
+Copy-Item out/gaze-edit/starlight-eyes.npz out/gaze-edit/second-look.npz
+'[{"op":"move","id":"far_iris","dx":12,"dy":-3},{"op":"move","id":"near_iris","dx":15,"dy":-4}]' | python brush.py edit out/gaze-edit/second-look.npz - --out out/gaze-edit/second-look.png --preview out/gaze-edit/second-look-compare.png
+```
+
+`edit` 将新位置保存回对象档案。`--out` 导出合成图，`--preview` 同时输出全图和局部前后对照，JSON 报告给出实际改动范围和像素数。已有画作需要提供可露出的底色和可移动的前景，本例从原画重建眼白，并用固定的眼睑遮罩限制虹膜。
+
+从零画时，用 `Drawing` 给底稿对象指定 ID，在铺色前移动或替换它们。给 `Studio.strokes(..., on='眼睛')` 的笔触沿选区逐像素裁切。厚涂打光会在邻近像素产生阴影，检查颜料边界时可用 `lit=False`。详见[按对象修改与局部预览](skill/SKILL.md#按对象修改与局部预览)。
 
 ## 让一幅画动起来
 
@@ -152,7 +167,7 @@ python examples\media_sheet.py                             # 同一幅静物用�
 - `brushwork/cli.py`：会话、JSON 指令、撤销、重放。
 - `brushwork/replay.py`：记录作画过程，导出回放网页。
 - `brushwork/geom.py`：曲线和栅格化工具。
-- `examples/`：三幅画的源头、笔触试样、颜料色卡和画材对照。
+- `examples/` 提供底稿绘画、成品对象编辑、动画、笔触试样、颜料色卡和画材对照。
 - `skill/SKILL.md`：给 agent 的用法说明。
 - `tests/check.py`：自检，约一分钟。
 

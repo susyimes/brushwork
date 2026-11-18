@@ -69,7 +69,8 @@ def _wprof(s, L, R, taper):
 
 @njit(cache=True, fastmath=True)
 def paint_strokes(col, sca, wet, hgt, thk, iri, ifd, stamp, tooth,
-                  pts, off, sp, seeds, comp_idx, comp_w, pig_K, pig_S, order, stamp_base):
+                  pts, off, sp, seeds, comp_idx, comp_w, pig_K, pig_S, order, stamp_base,
+                  clip=None, deposited=None):
     """Lay strokes on the canvas, in `order`.  Returns (pixels touched, bristle trails)."""
     H = hgt.shape[0]
     W = hgt.shape[1]
@@ -84,6 +85,7 @@ def paint_strokes(col, sca, wet, hgt, thk, iri, ifd, stamp, tooth,
     bs1 = np.zeros(MAXB, np.float32)
     bfq = np.zeros(MAXB, np.float32)
     bph = np.zeros(MAXB, np.float32)
+    blend_ready = np.zeros(MAXB, np.bool_)
     zc = np.zeros(4, np.float64)
     rs = np.zeros(1, np.int64)
     npix = 0
@@ -134,6 +136,7 @@ def paint_strokes(col, sca, wet, hgt, thk, iri, ifd, stamp, tooth,
         if NB > MAXB:
             NB = MAXB
         ntrail += NB
+        pixels_before = npix
         rs[0] = seeds[i] * 2654435761 + 88172645463325252
         _rnd(rs)
 
@@ -266,6 +269,10 @@ def paint_strokes(col, sca, wet, hgt, thk, iri, ifd, stamp, tooth,
                         qx = W - 1
                     if qy >= H:
                         qy = H - 1
+                    if clip is not None:
+                        blend_ready[j] = clip[qy, qx]
+                        if not blend_ready[j]:
+                            continue
                     Sp = sca[qy, qx]
                     bS[j] = Sp
                     for c in range(3):
@@ -306,6 +313,8 @@ def paint_strokes(col, sca, wet, hgt, thk, iri, ifd, stamp, tooth,
                     py = int(math.floor(fy + 0.5))
                     if px < 0 or py < 0 or px >= W or py >= H:
                         continue
+                    if clip is not None and not clip[py, px]:
+                        continue
                     if stamp[py, px] == sid:
                         continue
                     xb = (u * 0.5 + 0.5) * NB - 0.5 + lw * (1.0 - u * u)
@@ -318,6 +327,15 @@ def paint_strokes(col, sca, wet, hgt, thk, iri, ifd, stamp, tooth,
                         continue
                     stamp[py, px] = sid
                     w_old = wet[py, px]
+                    if clip is not None and mode > 0.5 and not blend_ready[j]:
+                        # A blending bristle entering the selection picks up its first colour here.
+                        Sp = sca[py, px]
+                        bS[j] = Sp
+                        for c in range(3):
+                            Rp = col[py, px, c]
+                            bR[j, c] = Rp
+                            bK[j, c] = Sp * (1.0 - Rp) * (1.0 - Rp) / (2.0 * Rp + 1e-4)
+                        blend_ready[j] = True
 
                     # -- pick wet paint up into the bristle (Kubelka-Munk mixing) ---------
                     if pick > 0.0 and w_old > 0.02:
@@ -387,6 +405,10 @@ def paint_strokes(col, sca, wet, hgt, thk, iri, ifd, stamp, tooth,
                         iri[py, px] = inew
                     npix += 1
             s_acc += sl
+        if deposited is not None:
+            deposited[oi] = npix > pixels_before
+            if not deposited[oi]:
+                ntrail -= NB
     return npix, ntrail
 
 
@@ -729,31 +751,39 @@ class Canvas:
         if self.stroke_tape is not None:
             self.stroke_tape.tooth()
 
-    def paint(self, strokes, order=None, shuffle=True):
+    def paint(self, strokes, order=None, shuffle=True, clip=None):
         if len(strokes) == 0:
-            return
+            return 0
         pts, off, sp, ci, cw = strokes.arrays()
         n = len(off) - 1
         if order is None:
             order = self.rng.permutation(n) if shuffle else np.arange(n)
         seeds = self.rng.integers(1, 2 ** 31 - 1, n).astype(np.int64)
-        self.deposit(pts, off, sp, ci, cw, np.asarray(order, np.int64), seeds)
+        return self.deposit(pts, off, sp, ci, cw, np.asarray(order, np.int64), seeds, clip=clip)
 
-    def deposit(self, pts, off, sp, ci, cw, order, seeds):
+    def deposit(self, pts, off, sp, ci, cw, order, seeds, clip=None):
         """Apply an already loaded batch in its physical order, with its original bristle seeds."""
         n = len(off) - 1
+        deposited = None
+        if clip is not None:
+            clip = np.asarray(clip, dtype=bool)
+            if clip.shape != (self.H, self.W):
+                raise ValueError('Brush selection must match the canvas size')
+            deposited = np.zeros(len(order), bool)
         npix, ntrail = paint_strokes(self.col, self.sca, self.wet, self.hgt, self.thk,
                                      self.iri, self.ifd, self.stamp, self.tooth,
                                      pts, off, sp, seeds, ci, cw, C.PIG_K, C.PIG_S,
-                                     order, self._stamp_base)
+                                     order, self._stamp_base, clip, deposited)
+        visible = order if deposited is None else order[deposited]
         self._stamp_base += n + 1
-        self.n_strokes += n
+        self.n_strokes += len(visible)
         self.n_trails += int(ntrail)
         self.n_pix += int(npix)
-        if self.recorder is not None:
-            self.recorder.strokes(pts, off, sp, order)
+        if self.recorder is not None and len(visible):
+            self.recorder.strokes(pts, off, sp, visible, clip=clip)
         if self.stroke_tape is not None:
-            self.stroke_tape.batch(pts, off, sp, ci, cw, order, seeds)
+            self.stroke_tape.batch(pts, off, sp, ci, cw, order, seeds, clip=clip)
+        return len(visible)
 
     def dry(self, amount=1.0):
         self.wet *= (1.0 - amount)
